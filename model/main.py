@@ -15,7 +15,8 @@ class Anticipation(nn.Module):
         self.backbone = _utils.IntermediateLayerGetter(backbone, BF_CONFIG['RETURN_LAYERS'])
         self.i3d_head = I3D_Head(d_in=BF_CONFIG["d_input"])
         self.transformer = Transformer(BF_CONFIG["n_layers"], BF_CONFIG["n_attn_head"], BF_CONFIG["d_input"], 
-                                       BF_CONFIG["d_inner"], BF_CONFIG["d_qk"], BF_CONFIG["d_v"], BF_CONFIG["drop_prob"], use_dec=use_dec)
+                                       BF_CONFIG["d_inner"], BF_CONFIG["d_qk"], BF_CONFIG["d_v"], BF_CONFIG["drop_prob"], 
+                                       BF_CONFIG["video_len"], use_dec=use_dec, pos_enc=BF_CONFIG["pos_enc"])
         self.enc_head = Encoder_Head(len(BF_ACTION_CLASS), in_dim=BF_CONFIG["d_input"])
         self.dec_head = Decoder_Head()
 

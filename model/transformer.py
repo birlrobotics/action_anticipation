@@ -4,6 +4,7 @@
     https://pytorch.org/docs/stable/_modules/torch/nn/modules/transformer.html#Transformer
 '''
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,15 +25,15 @@ def get_sequence_mask(seq_len):
 
 
 class Transformer(nn.Module):
-    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1, use_dec=True):
+    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1, max_len=128, pos_enc=True, use_dec=True):
         super(Transformer, self).__init__()
         
         self.use_dec = use_dec
         self.encoder = Encoder(n_layers=n_layers, n_attn_head=n_attn_head, d_input=d_input, 
-                               d_inner=d_inner, d_qk=d_qk, d_v=d_v, drop_prob=drop_prob)
+                               d_inner=d_inner, d_qk=d_qk, d_v=d_v, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
         if use_dec:
             self.decoder = Decoder(n_layers=n_layers, n_attn_head=n_attn_head, d_input=d_input, 
-                                d_inner=d_inner, d_qk=d_qk, d_v=d_v, drop_prob=drop_prob)
+                               d_inner=d_inner, d_qk=d_qk, d_v=d_v, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
 
     def forward(self, src_seq, trg_seq, pad_num):
         # TODO: make the mask matrix
@@ -49,10 +50,10 @@ class Transformer(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1):
+    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, max_len, drop_prob=0.1, pos_enc=True):
         super(Encoder, self).__init__()
         # TODO: finish the PositionalEncoding()
-        self.position_enc = PositionalEncoding()
+        self.position_enc = PositionalEncoding(d_input=d_input, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
         self.encoder_stack = nn.ModuleList([EncoderLayer(n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob) for _ in range(n_layers)])
         # self.layer_norm = nn.LayerNorm(d_input, eps=1e-6)
 
@@ -68,9 +69,9 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1):
+    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, max_len, drop_prob=0.1, pos_enc=True):
         super(Decoder, self).__init__()
-        self.position_enc = PositionalEncoding()
+        self.position_enc = PositionalEncoding(d_input=d_input, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
         self.decoder_stack = nn.ModuleList([DecoderLayer(n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob) for _ in range(n_layers)])
 
     def forward(self, x, enc_output, src_mask, trg_mask, return_attn=False):
@@ -86,11 +87,26 @@ class Decoder(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, ):
+    '''https://github.com/pytorch/examples/blob/master/word_language_model/model.py'''
+    def __init__(self, d_input, max_len, drop_prob=0.1, pos_enc=True):
         super(PositionalEncoding, self).__init__()
+        if pos_enc:
+            pe = torch.zeros(max_len, d_input)
+            position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+            div_term = torch.exp(torch.arange(0, d_input, 2).float() * (-math.log(10000.0) / d_input))
+            pe[:, 0::2] = torch.sin(position * div_term) # dim 2i
+            pe[:, 1::2] = torch.cos(position * div_term) # dim 2i+1
+            pe = pe.unsqueeze(0)
+            self.register_buffer('pe', pe)
+            self.dropout = nn.Dropout(drop_prob)
+        self.pos_enc = pos_enc
 
     def forward(self, x):
-        return x
+        if self.pos_enc:
+            x = x + self.pe[:, :x.size(1), :]
+            return self.dropout(x)
+        else:
+            return x
 
 
 class EncoderLayer(nn.Module):

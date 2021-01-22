@@ -61,7 +61,6 @@ class BreakfastDataset(Dataset):
         # load data: [len, sample_num, H, W, C]
         clips, labels, pad_num = self._load_clips_and_labels(self.data_dir[index], load_mode=self.load_mode)
         # TODO: Add preprocess here
-        # import ipdb; ipdb.set_trace()
         clips = self._normalize(clips)
         # [len, sample_num, H, W, C] --> [len, C, sample_num, H, W]
         clips = clips.transpose((0, 4, 1, 2, 3))
@@ -69,7 +68,11 @@ class BreakfastDataset(Dataset):
         return torch.from_numpy(clips), torch.from_numpy(labels), pad_num
 
     def _load_clips_and_labels(self, data_dir, load_mode='all'):
-        frames = sorted([os.path.join(data_dir, img) for img in os.listdir(data_dir)])
+        frame_path = self.data_dir[index]
+        # # for baxter workstation
+        # if any([i in frame_path for i in ["P43", "P44", "P45", "P46", "P47", "P48", "P49", "P50", "P51", "P52", "P53", "P54"]]):
+        #     frame_path = frame_path.replace("./dataset/breakfast/rgb_frame", "../projects/supp_dataset/breakfast")
+        frames = sorted([os.path.join(frame_path, img) for img in os.listdir(frame_path)])
         if load_mode == 'all':
             buffer, labels = self._load_clips_all(data_dir, frames, random_sample=False)
             return buffer, labels

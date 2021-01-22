@@ -3,7 +3,6 @@
 
 `` python -m dataset.annotation_gather './dataset/breakfast/original/' './dataset/breakfast/' ``
 
-
 ### TODO
 - [x] When processing the stereo video, it seems we just need to choose the ch0 video;
 - [ ] Add data augmentation;
@@ -12,7 +11,6 @@
 - [ ] Which normalization we should use in Transformer;
 - [ ] Shall we need the ReLU activation function when calculating the (Q, K, V) in attention;
 - [ ] shall we need a Conv layer in I3D head instead of average pooling?
-
 
 ### IDEAS
 

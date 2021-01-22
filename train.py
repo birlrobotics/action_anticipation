@@ -10,7 +10,6 @@ from tensorboardX import SummaryWriter
 
 from dataset.config import BF_CONFIG
 from model.main import Anticipation 
-from model.transformer import get_pad_mask
 from dataset.breakfast_dataset import BreakfastDataset 
 import utils.io as io
 
@@ -26,6 +25,8 @@ def arg_parse():
     # For training
     parser.add_argument('--ds', '--dataset', type=str, default='breakfast', 
                         help='The dataset you want to train: default=breakfast')
+    parser.add_argument('--split_idx', type=int, default=0, choices=[0,1,2,3], 
+                        help='dataset splited configuration: default=0')
     parser.add_argument('--nw', '--num_workers', type=int, default=0, 
                         help='Number of workers used in dataloading: default=0')
     parser.add_argument('--bs', '--batch_size', type=int, default=1, 
@@ -53,8 +54,8 @@ def arg_parse():
 
 def train_model():
     # prepare the data
-    train_set = BreakfastDataset(mode="train", split_idx=0, preproc=None, over_write=False)
-    val_set = BreakfastDataset(mode="val", split_idx=0, preproc=None, over_write=False)
+    train_set = BreakfastDataset(mode="train", split_idx=args.split_idx, preproc=None, over_write=False)
+    val_set = BreakfastDataset(mode="val", split_idx=args.split_idx, preproc=None, over_write=False)
     train_dataloader = DataLoader(dataset=train_set, batch_size=args.bs, shuffle=True, num_workers=args.nw)
     val_dataloader = DataLoader(dataset=val_set, batch_size=args.bs, shuffle=True, num_workers=args.nw)
     dataset = {"train": train_set, "val": val_set}
@@ -107,8 +108,8 @@ def train_model():
                 # import ipdb; ipdb.set_trace()
                 # count += 1; 
                 # if count > 10: break
-                feat = data[0]
-                labels = data[1]
+                feat = data[0][:,0:2]
+                labels = data[1][:,0:2]
                 pad_num = data[2]
                 feat, labels = feat.to(device), labels.to(device)
                 if phase == 'train':
