@@ -91,7 +91,7 @@ def train_model():
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=0, amsgrad=True)
     # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.scheduler_step, gamma=0.1)
     # rec_criterion = nn.BCEWithLogitsLoss()
-    rec_criterion = nn.CrossEntropyLoss()
+    rec_criterion = nn.CrossEntropyLoss(reduction='sum')    # 'mean' 'sum' 'none'
     
     #set up logger
     writer = SummaryWriter(log_dir=args.log_dir + '/' + args.ds + '/' + args.exp_ver)
@@ -103,13 +103,14 @@ def train_model():
         for phase in phase_list:
             s_t = time.time()
             epoch_loss = 0
+            sample_num = 0
             # count = 0
             for data in tqdm(dataloader[phase]):
                 # import ipdb; ipdb.set_trace()
                 # count += 1; 
                 # if count > 10: break
-                feat = data[0][:,0:2]
-                labels = data[1][:,0:2]
+                feat = data[0]
+                labels = data[1]
                 pad_num = data[2]
                 feat, labels = feat.to(device), labels.to(device)
                 if phase == 'train':
@@ -124,13 +125,15 @@ def train_model():
                     with torch.no_grad():
                         logits = model(feat, pad_num)
                         loss = rec_criterion(logits.reshape(logits.shape[:-1].numel(), logits.shape[-1]), labels.reshape(labels.shape.numel()))
-                epoch_loss += loss.item() * (labels.shape.numel() - pad_num.sum()).float()
-            epoch_loss /= len(dataset[phase])
+                # epoch_loss += loss.item() * (labels.shape.numel() - pad_num.sum()).float()
+                epoch_loss += loss.item()
+                sample_num += (labels.shape.numel() - pad_num.sum()).float()
+            epoch_loss /= sample_num
             loss_list.append(epoch_loss)
             # print loss
             if epoch == 0 or (epoch % args.print_every) == 9:
                 e_t = time.time()
-                print(f"Phase:[{phase}] Epoch:[{epoch+1}/{args.epoch}]  Loss:[{epoch_loss}]  Execution_time:[{round(e_t-s_t, 1)}]")
+                print(f"Phase:[{phase}] Epoch:[{epoch+1}/{args.epoch}]  Loss:[{epoch_loss}]  Execution_time:[{round(e_t-s_t, 1)}] second")
         # plot loss
         assert len(phase_list) == len(loss_list)
         if len(phase_list) == 2:

@@ -68,10 +68,10 @@ class BreakfastDataset(Dataset):
         return torch.from_numpy(clips), torch.from_numpy(labels), pad_num
 
     def _load_clips_and_labels(self, data_dir, load_mode='all'):
-        frame_path = self.data_dir[index]
+        frame_path = data_dir
         # # for baxter workstation
-        # if any([i in frame_path for i in ["P43", "P44", "P45", "P46", "P47", "P48", "P49", "P50", "P51", "P52", "P53", "P54"]]):
-        #     frame_path = frame_path.replace("./dataset/breakfast/rgb_frame", "../projects/supp_dataset/breakfast")
+        # if any([i in frame_path for i in ["P42", "P43", "P44", "P45", "P46", "P47", "P48", "P49", "P50", "P51", "P52", "P53", "P54"]]):
+        #     frame_path = frame_path.replace("./dataset/breakfast/rgb_frame", "../supp_dataset/breakfast")
         frames = sorted([os.path.join(frame_path, img) for img in os.listdir(frame_path)])
         if load_mode == 'all':
             buffer, labels = self._load_clips_all(data_dir, frames, random_sample=False)
