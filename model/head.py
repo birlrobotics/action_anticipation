@@ -22,18 +22,19 @@ class I3D_Recognition_Head(nn.Module):
 
 
 class I3D_Head(nn.Module):
-    def __init__(self, d_in=1024):
+    def __init__(self, d_in=1024, drop_prob=0.1):
         super(I3D_Head, self).__init__()
         self.avg = nn.AvgPool3d(kernel_size=(1, 7, 7), stride=1)
         self.fc = nn.Linear(d_in, d_in, bias=True)
+        self.dropout = nn.Dropout(drop_prob)
     
     def forward(self, x):
         x = self.avg(x)
         x = x.squeeze(2)
         x = x.squeeze(2)
         x = x.squeeze(2)
-        x = self.fc(x)
-        return x
+        x = F.relu(self.fc(x))
+        return self.dropout(x)
 
 
 class Encoder_Head(nn.Module):

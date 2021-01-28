@@ -10,7 +10,7 @@ BF_CONFIG = {
     "RESIZE_WIDTH": 224,
     "RESIZE_HEIGHT": 224,
     "RETURN_LAYERS": {'15': 'feat'},  # {'15': 'Mixed_5c', '16': 'AvgPool'}
-    "load_mode": "uniform",         # [all, uniform], how to load the clips
+    "load_mode": "uniform",           # [all, uniform], how to load the clips
     "video_len": 128,                 # uniformly sample clips, only available when the sample_mode is "uniform"
     "sample_num_each_clip": 8,
     # For transformer
@@ -20,7 +20,7 @@ BF_CONFIG = {
     "d_inner": 2048,
     "d_qk": 64,
     "d_v": 64,
-    "drop_prob": 0.1,
+    "drop_prob": 0.5,
     "pos_enc": True,
     # For backbone
     "backbone": 'i3d',

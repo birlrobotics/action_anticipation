@@ -36,6 +36,8 @@ class BreakfastDataset(Dataset):
         self.sample_num = BF_CONFIG['sample_num_each_clip']
         self.load_mode = BF_CONFIG['load_mode']
 
+        # _, self.data_dir = train_test_split(self.data_dir, test_size=BF_CONFIG["test_size"], random_state=42)
+
     def _split_data(self, mode, split_idx, test_size):
         # construct splited examples
         split_data = {"trainval":[], "train":[], "val":[], "test":[]}

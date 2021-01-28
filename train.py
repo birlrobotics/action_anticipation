@@ -90,6 +90,8 @@ def train_model():
     else:
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=0, amsgrad=True)
     # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.scheduler_step, gamma=0.1)
+    # for param_group in model.param_groups:
+        # param_group['lr'] = new_lr
     # rec_criterion = nn.BCEWithLogitsLoss()
     rec_criterion = nn.CrossEntropyLoss(reduction='sum')    # 'mean' 'sum' 'none'
     
