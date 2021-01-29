@@ -302,7 +302,8 @@ class I3D(nn.Module):
             nn.MaxPool3d(kernel_size=(2, 2, 2), stride=(2, 2, 2), padding=(0, 0, 0)), # (832, 8, 7, 7)
             Mixed_5b(), # (832, 8, 7, 7)
             Mixed_5c(), # (1024, 8, 7, 7)
-            nn.AvgPool3d(kernel_size=(2, 7, 7), stride=1),# (1024, 7, 1, 1)
+            # nn.AvgPool3d(kernel_size=(2, 7, 7), stride=1),# (1024, 7, 1, 1)
+            nn.AvgPool3d(kernel_size=(1, 7, 7), stride=1),# (1024, 7, 1, 1)
             nn.Dropout3d(dropout_drop_prob),
             nn.Conv3d(1024, num_classes, kernel_size=1, stride=1, bias=True),# (400, 7, 1, 1)
         )

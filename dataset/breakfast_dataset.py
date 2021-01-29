@@ -19,8 +19,13 @@ _DatasetPath = BF_CONFIG["data_dir"]
 _ALLFILES = ['P'+str(i).zfill(2) for i in range(3, 55)]
 
 class BreakfastDataset(Dataset):
-    # mode = ["trainval", "train", "val"]
-    def __init__(self, mode='train', split_idx=0, preproc=None, over_write=False):
+    '''    
+        Dataset class for breakfast:
+        Args:
+            mode = ["trainval", "train", "val"]
+            task = ["recog_only", "recog_anti"]
+    '''
+    def __init__(self, mode='train', split_idx=0, task='recog_only', anti_feat=False, preproc=None, over_write=False):
         super(BreakfastDataset, self).__init__()
         # prepare dataset
         # get original notation information
@@ -35,6 +40,8 @@ class BreakfastDataset(Dataset):
         self.video_len = BF_CONFIG['video_len']
         self.sample_num = BF_CONFIG['sample_num_each_clip']
         self.load_mode = BF_CONFIG['load_mode']
+        self.task = task
+        self.anti_feat = anti_feat
 
         # _, self.data_dir = train_test_split(self.data_dir, test_size=BF_CONFIG["test_size"], random_state=42)
 
@@ -60,14 +67,71 @@ class BreakfastDataset(Dataset):
         return len(self.data_dir)
 
     def __getitem__(self, index):
-        # load data: [len, sample_num, H, W, C]
-        clips, labels, pad_num = self._load_clips_and_labels(self.data_dir[index], load_mode=self.load_mode)
-        # TODO: Add preprocess here
-        clips = self._normalize(clips)
-        # [len, sample_num, H, W, C] --> [len, C, sample_num, H, W]
-        clips = clips.transpose((0, 4, 1, 2, 3))
+        if self.task == 'recog_only':
+            # load data: [len, sample_num, H, W, C]
+            clips, labels, pad_num = self._load_clips_and_labels(self.data_dir[index], load_mode=self.load_mode)
+            # TODO: Add preprocess here
+            clips = self._normalize(clips)
+            # [len, sample_num, H, W, C] --> [len, C, sample_num, H, W]
+            clips = clips.transpose((0, 4, 1, 2, 3))
+            
+            return torch.from_numpy(clips), torch.from_numpy(labels), pad_num
+        else:
+            obs_clips, obs_labels, obs_pad_num, anti_clips, anti_labels, anti_pad_num \
+                                        = self._recog_anti_data_gen(self.data_dir[index])
+            obs_clips = self._normalize(obs_clips).transpose((0, 1, 5, 2, 3, 4))
+            if self.anti_feat:
+                anti_clips = self._normalize(anti_clips).transpose((0, 1, 5, 2, 3, 4))
+            return torch.from_numpy(obs_clips), torch.from_numpy(obs_labels), obs_pad_num, \
+                   torch.from_numpy(anti_clips), torch.from_numpy(anti_labels), anti_pad_num
+
+    def _recog_anti_data_gen(self, data_dir):
+        frames = sorted([os.path.join(data_dir, img) for img in os.listdir(data_dir)])
+        all_buffer, all_label = self._sample(data_dir, frames, 1)
+        obs_perc = [.1, .2, .3, .5]
+        obs_buffer_list = []; obs_label_list = []; obs_pad_num_list = []
+        anti_buffer_list = []; anti_label_list = []; anti_pad_num_list = []
+        for i in obs_perc:
+            obs_content = all_buffer[:int(i*all_buffer.shape[0])]
+            obs_label = all_label[:int(i*all_label.shape[0])]
+            anti_content = np.array([], np.float32)
+            if self.anti_feat:
+                anti_content = all_buffer[int(i*all_buffer.shape[0]):int((0.5+i)*all_buffer.shape[0])]
+            anti_label = all_label[int(i*all_buffer.shape[0]):int((0.5+i)*all_buffer.shape[0])]
+            obs_pad_num = 0; anti_pad_num = 0
+            if obs_content.shape[0] < self.video_len:
+                obs_pad_num = self.video_len - obs_content.shape[0]
+                obs_content = np.concatenate((obs_content, np.tile(obs_content[-1][None,:], (obs_pad_num, 1, 1, 1, 1))))
+                obs_label = np.concatenate((obs_label, np.array([-100]*obs_pad_num)))
+            elif obs_content.shape[0] > self.video_len:
+                omit_idxs = sorted(random.sample((range(obs_content.shape[0])), int(obs_content.shape[0]-self.video_len)))
+                obs_content = np.delete(obs_content, omit_idxs, axis=0)
+                obs_label = np.delete(obs_label, omit_idxs)
+            else:
+                pass
+            if anti_label.shape[0] < self.video_len:
+                anti_pad_num = self.video_len - anti_label.shape[0]
+                if self.anti_feat:
+                    anti_content = np.concatenate((anti_content, np.tile(anti_content[-1][None, :], (anti_pad_num, 1, 1, 1, 1))))
+                anti_label = np.concatenate((anti_label, np.array([-100]*anti_pad_num)))
+            elif anti_label.shape[0] > self.video_len:
+                omit_idxs = sorted(random.sample((range(anti_label.shape[0])), int(anti_label.shape[0]-self.video_len)))
+                if self.anti_feat:
+                    anti_content = np.delete(anti_content, omit_idxs, axis=0)
+                anti_label = np.delete(anti_label, omit_idxs)
+            else:
+                pass
+            obs_buffer_list.append(obs_content[None, :]); obs_label_list.append(obs_label[None,:]); obs_pad_num_list.append(obs_pad_num)
+            anti_buffer_list.append(anti_content[None, :]); anti_label_list.append(anti_label[None, :]); anti_pad_num_list.append(anti_pad_num)
+
+        obs_buffer = np.concatenate(obs_buffer_list)
+        obs_label = np.concatenate(obs_label_list)
+        obs_pad_num = np.array(obs_pad_num_list)
+        anti_buffer = np.concatenate(anti_buffer_list)
+        anti_label = np.concatenate(anti_label_list)
+        anti_pad_num = np.array(anti_pad_num_list)
         
-        return torch.from_numpy(clips), torch.from_numpy(labels), pad_num
+        return obs_buffer, obs_label, obs_pad_num, anti_buffer, anti_label, anti_pad_num 
 
     def _load_clips_and_labels(self, data_dir, load_mode='all'):
         frame_path = data_dir
@@ -107,7 +171,8 @@ class BreakfastDataset(Dataset):
             # skip the extremely short segments
             if a==b or (int(b)-int(a)<8):
                 continue
-            clip_num = (int(b)-int(a))*sample_ratio // 15 if (int(b)-int(a))*sample_ratio // 15 else 1
+            # clip_num = (int(b)-int(a))*sample_ratio // 15 if (int(b)-int(a))*sample_ratio // 15 else 1
+            clip_num = round((int(b)-int(a))*sample_ratio / 15)
             try:
                 for s in sorted(random.sample((range(int(a), int(b), 15)), int(clip_num))):
                     temp_data = np.empty((self.sample_num, BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
@@ -115,7 +180,7 @@ class BreakfastDataset(Dataset):
                     if clip_num == 1:
                         if int(b) > len(frames):
                             break
-                        s = 1 if int(b)-8==int(a) else random.choice(range(int(a), int(b)-8))
+                        s = int(a) if int(b)-8==int(a) else random.choice(range(int(a), int(b)-8))
                         for i, j in enumerate(range(s, s+8)):
                             frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
                             temp_data[i] = frame   
@@ -190,17 +255,42 @@ class BreakfastDataset(Dataset):
         return buffer, labels
 
     def _normalize(self, buffer):
-        means = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-        stds = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-        # normalization
-        buffer /= 255.0
-        # buffer = (buffer - means[None, None, None, None, :]) / stds[None, None, None, None, :]
-        buffer = (buffer - means) / stds
-        return buffer
-        
-def collect_fn(batch):
-    pass
+        try:
+            means = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+            stds = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+            # normalization
+            buffer /= 255.0
+            # buffer = (buffer - means[None, None, None, None, :]) / stds[None, None, None, None, :]
+            buffer = (buffer - means) / stds
+            return buffer
+        except Exception as e:
+            import ipdb; ipdb.set_trace()
+            print(e)
 
+## just for recog_anti model
+def collate_fn(batch):
+    '''
+        Default collate_fn(): https://github.com/pytorch/pytorch/blob/1d53d0756668ce641e4f109200d9c65b003d05fa/torch/utils/data/_utils/collate.py#L43
+    '''
+    # import ipdb; ipdb.set_trace()
+    batch_obs_clips = torch.empty((0, BF_CONFIG['video_len'], 3, BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH']), dtype=torch.float)
+    batch_obs_labels = torch.empty((0, BF_CONFIG['video_len']), dtype=torch.int64)
+    batch_obs_pad_num = np.empty((0))
+    batch_anti_clips = torch.empty((0, BF_CONFIG['video_len'], 3, BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH']), dtype=torch.float)
+    batch_anti_labels = torch.empty((0, BF_CONFIG['video_len']), dtype=torch.int64)
+    batch_anti_pad_num = np.empty((0))
+
+    for data in batch:
+        batch_obs_clips = torch.cat((batch_obs_clips, data[0]))
+        batch_obs_labels = torch.cat((batch_obs_labels, data[1]))
+        batch_obs_pad_num = np.concatenate((batch_obs_pad_num, data[2]))
+        if len(data[3].shape) > 3:
+            batch_anti_clips = torch.cat((batch_anti_clips, data[3]))
+        batch_anti_labels = torch.cat((batch_anti_labels, data[4]))
+        batch_anti_pad_num = np.concatenate((batch_anti_pad_num, data[5]))
+
+    return batch_obs_clips, batch_obs_labels, batch_obs_pad_num, \
+           batch_anti_clips, batch_anti_labels, batch_anti_pad_num
 
 if __name__ == "__main__":
     dataset = BreakfastDataset()

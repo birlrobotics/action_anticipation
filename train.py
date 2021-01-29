@@ -10,7 +10,7 @@ from tensorboardX import SummaryWriter
 
 from dataset.config import BF_CONFIG
 from model.main import Anticipation 
-from dataset.breakfast_dataset import BreakfastDataset 
+from dataset.breakfast_dataset import BreakfastDataset, collate_fn
 import utils.io as io
 
 import argparse 
@@ -22,11 +22,16 @@ def arg_parse():
     # For model
     parser.add_argument('--use_dec', action="store_true", 
                         help='use decoder or not: action="store_true"')
+    # For dataset
+    parser.add_argument('--split_idx', type=int, default=0, choices=[0,1,2,3], 
+                        help='dataset splited configuration: default=0')
+    parser.add_argument('--task', type=str, default='recog_only', choices=["recog_only", "recog_anti"],
+                        help="which task do you want to conduct [recog_only or recog_anti]")
+    parser.add_argument('--anti_feat', action="store_true",
+                        help="return anticipation features or not: action='store_true'")
     # For training
     parser.add_argument('--ds', '--dataset', type=str, default='breakfast', 
                         help='The dataset you want to train: default=breakfast')
-    parser.add_argument('--split_idx', type=int, default=0, choices=[0,1,2,3], 
-                        help='dataset splited configuration: default=0')
     parser.add_argument('--nw', '--num_workers', type=int, default=0, 
                         help='Number of workers used in dataloading: default=0')
     parser.add_argument('--bs', '--batch_size', type=int, default=1, 
@@ -52,10 +57,117 @@ def arg_parse():
                         help='number of steps for saving the model parameters: 50')
     return parser.parse_args() 
 
-def train_model():
+
+def train_model_recog_anti():
     # prepare the data
-    train_set = BreakfastDataset(mode="train", split_idx=args.split_idx, preproc=None, over_write=False)
-    val_set = BreakfastDataset(mode="val", split_idx=args.split_idx, preproc=None, over_write=False)
+    train_set = BreakfastDataset(mode="train", split_idx=args.split_idx, task=args.task, anti_feat=args.anti_feat, preproc=None, over_write=False)
+    val_set = BreakfastDataset(mode="val", split_idx=args.split_idx, task=args.task, anti_feat=args.anti_feat, preproc=None, over_write=False)
+    train_dataloader = DataLoader(dataset=train_set, batch_size=args.bs, shuffle=True, num_workers=args.nw, collate_fn=collate_fn)
+    val_dataloader = DataLoader(dataset=val_set, batch_size=args.bs, shuffle=True, num_workers=args.nw, collate_fn=collate_fn)
+    dataset = {"train": train_set, "val": val_set}
+    dataloader = {"train": train_dataloader, "val": val_dataloader}
+    phase_list = ["train", 'val']
+    print("Preparing data done!!!")
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print("Training on {}.".format(device))
+
+    # prepare the model
+    assert args.use_dec == (args.task=="recog_anti"), "args.use_dec should be TRUE if args.task==recog_anti, vice versa" 
+    model = Anticipation(use_dec=args.use_dec)
+    model.to(device)
+
+    # get the numbers of parameters of the designed model
+    param_dict = {}
+    for param in model.named_parameters():
+        moduler_name = param[0].split('.')[0]
+        if moduler_name in param_dict.keys():
+            param_dict[moduler_name] += param[1].numel()
+        else:
+            param_dict[moduler_name] = param[1].numel()
+    for k, v in param_dict.items():
+        print(f"{k} Parameters: {v / 1e6} million.")
+    print(f"Parameters in total: {sum(param_dict.values()) / 1e6} million.")
+
+    # build optimizer && criterion
+    if args.optim == 'sgd':
+        optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, momentum=0.9, weight_decay=0)
+    elif args.optim == 'adam':
+        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=0)
+    else:
+        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=0, amsgrad=True)
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.scheduler_step, gamma=0.1)
+    # for param_group in model.param_groups:
+        # param_group['lr'] = new_lr
+    # rec_criterion = nn.BCEWithLogitsLoss()
+    rec_criterion = nn.CrossEntropyLoss(reduction='sum')    # 'mean' 'sum' 'none'
+    
+    #set up logger
+    writer = SummaryWriter(log_dir=args.log_dir + '/' + args.ds + '/' + args.exp_ver)
+    io.mkdir_if_not_exists(os.path.join(args.save_dir, args.ds, args.exp_ver), recursive=True)
+    
+    # start training
+    for epoch in range(args.start_epoch, args.epoch):
+        loss_list = []
+        for phase in phase_list:
+            s_t = time.time()
+            epoch_loss = 0
+            sample_num = 0
+            # count = 0
+            for data in tqdm(dataloader[phase]):
+                pass
+        #         # import ipdb; ipdb.set_trace()
+        #         # count += 1; 
+        #         # if count > 10: break
+        #         obs_feat = data[0]
+        #         obs_labels = data[1]
+        #         obs_pad_num = data[2]
+        #         anti_feat = data[3]
+        #         anti_labels = data[4]
+        #         anti_pad_num = data[5]
+        #         feat, labels = feat.to(device), labels.to(device)
+        #         if phase == 'train':
+        #             model.train()
+        #             model.zero_grad()
+        #             logits = model(feat, pad_num)
+        #             loss = rec_criterion(logits.reshape(logits.shape[:-1].numel(), logits.shape[-1]), labels.reshape(labels.shape.numel()))
+        #             loss.backward()
+        #             optimizer.step()
+        #         else:
+        #             model.eval()
+        #             with torch.no_grad():
+        #                 logits = model(feat, pad_num)
+        #                 loss = rec_criterion(logits.reshape(logits.shape[:-1].numel(), logits.shape[-1]), labels.reshape(labels.shape.numel()))
+        #         # epoch_loss += loss.item() * (labels.shape.numel() - pad_num.sum()).float()
+        #         epoch_loss += loss.item()
+        #         sample_num += (labels.shape.numel() - pad_num.sum()).float()
+        #     epoch_loss /= sample_num
+        #     loss_list.append(epoch_loss)
+        #     # print loss
+        #     if epoch == 0 or (epoch % args.print_every) == 9:
+        #         e_t = time.time()
+        #         print(f"Phase:[{phase}] Epoch:[{epoch+1}/{args.epoch}]  Loss:[{epoch_loss}]  Execution_time:[{round(e_t-s_t, 1)}] second")
+        # # plot loss
+        # assert len(phase_list) == len(loss_list)
+        # if len(phase_list) == 2:
+        #     writer.add_scalars('train_val_loss', {'train': loss_list[0], 'val': loss_list[1]}, epoch)
+        # else:
+        #     writer.add_scalars('trainval_loss', {'trainval': loss_list[0]}, epoch)
+        # # save training information and checkpoint
+        # if epoch % args.save_every == (args.save_every - 1) and epoch >= 0:
+        #     opts = {'lr': args.lr, 'b_s': args.bs, 'optim': args.optim, 'use_dec': args.use_dec}
+        #     save_info = {"arguments": opts, "config": BF_CONFIG}
+        #     io.dumps_json(save_info, os.path.join(args.save_dir, args.ds, args.exp_ver, 'training_info.json'))
+        #     save_name = "checkpoint_" + str(epoch+1) + "_epoch.pth"
+        #     torch.save(model.state_dict(), os.path.join(args.save_dir, args.ds, args.exp_ver, save_name))
+
+    writer.close()
+    print("Training finished!!!")
+
+def train_model_recog_only():
+    # prepare the data
+    train_set = BreakfastDataset(mode="train", split_idx=args.split_idx, task=args.task, preproc=None, over_write=False)
+    val_set = BreakfastDataset(mode="val", split_idx=args.split_idx, task=args.task, preproc=None, over_write=False)
     train_dataloader = DataLoader(dataset=train_set, batch_size=args.bs, shuffle=True, num_workers=args.nw)
     val_dataloader = DataLoader(dataset=val_set, batch_size=args.bs, shuffle=True, num_workers=args.nw)
     dataset = {"train": train_set, "val": val_set}
@@ -67,6 +179,7 @@ def train_model():
     print("Training on {}.".format(device))
 
     # prepare the model
+    assert args.use_dec == (args.task=="recog_anti"), "args.use_dec should be TRUE if args.task==recog_anti, vice versa" 
     model = Anticipation(use_dec=args.use_dec)
     model.to(device)
 
@@ -156,4 +269,7 @@ def train_model():
 
 if __name__ == "__main__":
     args = arg_parse()
-    train_model()
+    if args.task == "recog_only":
+        train_model_recog_only()
+    else:
+        train_model_recog_anti()

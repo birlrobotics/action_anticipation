@@ -9,10 +9,11 @@ BF_CONFIG = {
     "EXTRACT_FREQUENCY": 1,
     "RESIZE_WIDTH": 224,
     "RESIZE_HEIGHT": 224,
-    "RETURN_LAYERS": {'15': 'feat'},  # {'15': 'Mixed_5c', '16': 'AvgPool'}
+    "RETURN_LAYERS": {'16': 'feat'},  # {'15': 'Mixed_5c', '16': 'AvgPool'}
     "load_mode": "uniform",           # [all, uniform], how to load the clips
     "video_len": 128,                 # uniformly sample clips, only available when the sample_mode is "uniform"
     "sample_num_each_clip": 8,
+    "feat_hdf5_name": "i3d_feat.hdf5",
     # For transformer
     "n_layers": 2,
     "n_attn_head": 8,
