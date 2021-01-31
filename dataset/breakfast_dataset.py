@@ -6,11 +6,12 @@ if ROS_PATH in sys.path:
 
 import os   
 import cv2
+import h5py
 import random
 import numpy as np
-import torch
 from sklearn.model_selection import train_test_split
 
+import torch
 from torch.utils.data import Dataset
 import utils.io as io
 from dataset.config import BF_CONFIG, BF_ACTION_CLASS
@@ -24,12 +25,16 @@ class BreakfastDataset(Dataset):
         Args:
             mode = ["trainval", "train", "val"]
             task = ["recog_only", "recog_anti"]
+            feat_type = ["online", "offline"]
     '''
-    def __init__(self, mode='train', split_idx=0, task='recog_only', anti_feat=False, preproc=None, over_write=False):
+    def __init__(self, mode='train', split_idx=0, task='recog_only', feat_type='offline', anti_feat=False, preproc=None, over_write=False):
         super(BreakfastDataset, self).__init__()
         # prepare dataset
         # get original notation information
         self.notation_info = io.loads_json(os.path.join(_DatasetPath, "notation.json"))
+        if feat_type == "offline":
+            self.data_feat = h5py.File(os.path.join(BF_CONFIG["data_dir"], BF_CONFIG["feat_hdf5_name"]), 'r')
+        
         if not over_write and os.path.exists(os.path.join(_DatasetPath, "split" + str(split_idx) + '.json')):
             all_data = io.loads_json(os.path.join(_DatasetPath, "split" + str(split_idx) + '.json'))
             self.data_dir = all_data[mode].copy()
@@ -42,6 +47,7 @@ class BreakfastDataset(Dataset):
         self.load_mode = BF_CONFIG['load_mode']
         self.task = task
         self.anti_feat = anti_feat
+        self.feat_type = feat_type
 
         # _, self.data_dir = train_test_split(self.data_dir, test_size=BF_CONFIG["test_size"], random_state=42)
 
@@ -79,16 +85,21 @@ class BreakfastDataset(Dataset):
         else:
             obs_clips, obs_labels, obs_pad_num, anti_clips, anti_labels, anti_pad_num \
                                         = self._recog_anti_data_gen(self.data_dir[index])
-            obs_clips = self._normalize(obs_clips).transpose((0, 1, 5, 2, 3, 4))
-            if self.anti_feat:
+            if self.feat_type == 'online':
+                obs_clips = self._normalize(obs_clips).transpose((0, 1, 5, 2, 3, 4))
+            if self.anti_feat and self.feat_type=="online":
                 anti_clips = self._normalize(anti_clips).transpose((0, 1, 5, 2, 3, 4))
             return torch.from_numpy(obs_clips), torch.from_numpy(obs_labels), obs_pad_num, \
-                   torch.from_numpy(anti_clips), torch.from_numpy(anti_labels), anti_pad_num
+                   torch.from_numpy(anti_clips), torch.from_numpy(anti_labels), anti_pad_num, \
+                   self.data_dir[index]
 
     def _recog_anti_data_gen(self, data_dir):
-        frames = sorted([os.path.join(data_dir, img) for img in os.listdir(data_dir)])
-        all_buffer, all_label = self._sample(data_dir, frames, 1)
-        obs_perc = [.1, .2, .3, .5]
+        if self.feat_type == 'online':
+            frames = sorted([os.path.join(data_dir, img) for img in os.listdir(data_dir)])
+            all_buffer, all_label = self._sample(data_dir, frames, 1)
+        else:
+            all_buffer, all_label = self.data_feat[data_dir]["avg_feat"], self.data_feat[data_dir]["label"]
+        obs_perc = BF_CONFIG['obs_perc']
         obs_buffer_list = []; obs_label_list = []; obs_pad_num_list = []
         anti_buffer_list = []; anti_label_list = []; anti_pad_num_list = []
         for i in obs_perc:
@@ -101,7 +112,10 @@ class BreakfastDataset(Dataset):
             obs_pad_num = 0; anti_pad_num = 0
             if obs_content.shape[0] < self.video_len:
                 obs_pad_num = self.video_len - obs_content.shape[0]
-                obs_content = np.concatenate((obs_content, np.tile(obs_content[-1][None,:], (obs_pad_num, 1, 1, 1, 1))))
+                if self.feat_type == 'online':
+                    obs_content = np.concatenate((obs_content, np.tile(obs_content[-1][None,:], (obs_pad_num, 1, 1, 1, 1))))
+                else:
+                    obs_content = np.concatenate((obs_content, np.tile(obs_content[-1][None,:], (obs_pad_num, 1))))
                 obs_label = np.concatenate((obs_label, np.array([-100]*obs_pad_num)))
             elif obs_content.shape[0] > self.video_len:
                 omit_idxs = sorted(random.sample((range(obs_content.shape[0])), int(obs_content.shape[0]-self.video_len)))
@@ -112,7 +126,10 @@ class BreakfastDataset(Dataset):
             if anti_label.shape[0] < self.video_len:
                 anti_pad_num = self.video_len - anti_label.shape[0]
                 if self.anti_feat:
-                    anti_content = np.concatenate((anti_content, np.tile(anti_content[-1][None, :], (anti_pad_num, 1, 1, 1, 1))))
+                    if self.feat_type == 'online':
+                        anti_content = np.concatenate((anti_content, np.tile(anti_content[-1][None, :], (anti_pad_num, 1, 1, 1, 1))))
+                    else:
+                        anti_content = np.concatenate((anti_content, np.tile(anti_content[-1][None, :], (anti_pad_num, 1))))
                 anti_label = np.concatenate((anti_label, np.array([-100]*anti_pad_num)))
             elif anti_label.shape[0] > self.video_len:
                 omit_idxs = sorted(random.sample((range(anti_label.shape[0])), int(anti_label.shape[0]-self.video_len)))
@@ -187,6 +204,8 @@ class BreakfastDataset(Dataset):
                         # temp_label[BF_ACTION_CLASS.index(v)] = 1 
                         # labels_list.append(temp_label)
                         buffer_list.append(temp_data)
+                        if v=="walk_in" or v=="walk_out":
+                            v='SIL'
                         labels_list.append(BF_ACTION_CLASS.index(v))
                         break   
                     # set "flag" to avoid the empty temp_data                 
@@ -199,6 +218,8 @@ class BreakfastDataset(Dataset):
                             frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
                             temp_data[i] = frame
                         # temp_label[BF_ACTION_CLASS.index(v)] = 1
+                        if v=="walk_in" or v=="walk_out":
+                            v='SIL'
                         temp_label = BF_ACTION_CLASS.index(v) 
                     elif s+8 <= int(b):
                         if s+8 > len(frames):
@@ -208,6 +229,8 @@ class BreakfastDataset(Dataset):
                             frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
                             temp_data[i] = frame
                         # temp_label[BF_ACTION_CLASS.index(v)] = 1
+                        if v=="walk_in" or v=="walk_out":
+                            v='SIL'
                         temp_label = BF_ACTION_CLASS.index(v)
                     if flag:
                         buffer_list.append(temp_data)
@@ -268,7 +291,7 @@ class BreakfastDataset(Dataset):
             print(e)
 
 ## just for recog_anti model
-def collate_fn(batch):
+def collate_fn_with_backbone(batch):
     '''
         Default collate_fn(): https://github.com/pytorch/pytorch/blob/1d53d0756668ce641e4f109200d9c65b003d05fa/torch/utils/data/_utils/collate.py#L43
     '''
@@ -279,6 +302,7 @@ def collate_fn(batch):
     batch_anti_clips = torch.empty((0, BF_CONFIG['video_len'], 3, BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH']), dtype=torch.float)
     batch_anti_labels = torch.empty((0, BF_CONFIG['video_len']), dtype=torch.int64)
     batch_anti_pad_num = np.empty((0))
+    batch_img_dir = []
 
     for data in batch:
         batch_obs_clips = torch.cat((batch_obs_clips, data[0]))
@@ -288,9 +312,37 @@ def collate_fn(batch):
             batch_anti_clips = torch.cat((batch_anti_clips, data[3]))
         batch_anti_labels = torch.cat((batch_anti_labels, data[4]))
         batch_anti_pad_num = np.concatenate((batch_anti_pad_num, data[5]))
+        batch_img_dir.append(data[6])
 
     return batch_obs_clips, batch_obs_labels, batch_obs_pad_num, \
-           batch_anti_clips, batch_anti_labels, batch_anti_pad_num
+           batch_anti_clips, batch_anti_labels, batch_anti_pad_num, batch_img_dir
+
+## just for recog_anti model
+def collate_fn_without_backbone(batch):
+    '''
+        Default collate_fn(): https://github.com/pytorch/pytorch/blob/1d53d0756668ce641e4f109200d9c65b003d05fa/torch/utils/data/_utils/collate.py#L43
+    '''
+    # import ipdb; ipdb.set_trace()
+    batch_obs_clips = torch.empty((0, BF_CONFIG['video_len'], 1024), dtype=torch.float)
+    batch_obs_labels = torch.empty((0, BF_CONFIG['video_len']), dtype=torch.int64)
+    batch_obs_pad_num = np.empty((0))
+    batch_anti_clips = torch.empty((0, BF_CONFIG['video_len'], 1024), dtype=torch.float)
+    batch_anti_labels = torch.empty((0, BF_CONFIG['video_len']), dtype=torch.int64)
+    batch_anti_pad_num = np.empty((0))
+    batch_img_dir = []
+
+    for data in batch:
+        batch_obs_clips = torch.cat((batch_obs_clips, data[0]))
+        batch_obs_labels = torch.cat((batch_obs_labels, data[1]))
+        batch_obs_pad_num = np.concatenate((batch_obs_pad_num, data[2]))
+        if len(data[3].shape) > 2:
+            batch_anti_clips = torch.cat((batch_anti_clips, data[3]))
+        batch_anti_labels = torch.cat((batch_anti_labels, data[4]))
+        batch_anti_pad_num = np.concatenate((batch_anti_pad_num, data[5]))
+        batch_img_dir.append(data[6])
+
+    return batch_obs_clips, batch_obs_labels, batch_obs_pad_num, \
+           batch_anti_clips, batch_anti_labels, batch_anti_pad_num, batch_img_dir
 
 if __name__ == "__main__":
     dataset = BreakfastDataset()

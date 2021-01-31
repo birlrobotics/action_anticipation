@@ -52,35 +52,34 @@ def sample(data_dir, frames, sample_ratio=1):
             temp_data = np.empty((BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
             s = int(a) if int(b)-8==int(a) else random.choice(range(int(a), int(b)-8))
             for i, j in enumerate(range(s, s+8)):
-                frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
-                temp_data[i] = frame   
-            # temp_label[BF_ACTION_CLASS.index(v)] = 1 
-            # labels_list.append(temp_label)
+                temp_frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+                temp_data[i] = temp_frame   
             buffer_list.append(temp_data)
+            # consider "walk_in" and "walk_out" as "SIL"
+            if v=="walk_in" or v=="walk_out":
+                v='SIL'
             labels_list.append(BF_ACTION_CLASS.index(v))
             continue      
-        elif clip_num == 2:
-            for s in [int(a), int(b)-15]:
-                temp_data = np.empty((BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
-                for i, j in enumerate(range(s, s+15, 2)):
-                    frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
-                    temp_data[i] = frame
-                buffer_list.append(temp_data)
-                labels_list.append(BF_ACTION_CLASS.index(v))
         else:
-            s_list = random.sample((range(int(a)+15, int(b)-15, 15)), int(clip_num-2))
-            s_list.extend([int(a), int(b)-15])
+            if clip_num == 2:
+                s_list = [int(a), int(b)-15]
+            else:
+                s_list = random.sample((range(int(a)+15, int(b)-15, 15)), int(clip_num-2))
+                s_list.extend([int(a), int(b)-15])
             for s in sorted(s_list):
                 temp_data = np.empty((BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32')) 
                 if s+15 > len(frames):
-                    for i, j in enumerate(range(len(frame)-8, len(frame))):
-                        frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
-                        temp_data[i] = frame                
+                    for i, j in enumerate(range(len(frames)-8, len(frames))):
+                        temp_frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+                        temp_data[i] = temp_frame
                 else:
                     for i, j in enumerate(range(s, s+15, 2)):
-                        frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
-                        temp_data[i] = frame
+                        temp_frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+                        temp_data[i] = temp_frame
                 buffer_list.append(temp_data)
+                # consider "walk_in" and "walk_out" as "SIL"
+                if v=="walk_in" or v=="walk_out":
+                    v='SIL'
                 labels_list.append(BF_ACTION_CLASS.index(v))
 
     buffer = np.array(buffer_list)
@@ -97,15 +96,21 @@ if __name__ == "__main__":
 
     feat_file_name = h5py.File(os.path.join(BF_CONFIG["data_dir"], BF_CONFIG["feat_hdf5_name"]), 'w')
     notation_info = io.loads_json(os.path.join(BF_CONFIG["data_dir"], "notation.json"))
-    for data_dir in tqdm.tqdm(notation_info.keys()):
+    for data_dir in tqdm.tqdm(list(notation_info.keys())):
         # import ipdb; ipdb.set_trace()
         frames = sorted([os.path.join(data_dir, img) for img in os.listdir(data_dir)])
         all_buffer, all_label = sample(data_dir, frames, 1)
         all_buffer = normalize(all_buffer).transpose((0, 4, 1, 2, 3))
         all_buffer = torch.from_numpy(all_buffer).to(device)
-        with torch.no_grad():
+        if (all_buffer.shape[0] >= 500):
+            temp_feat = backbone(all_buffer[:500])
+            feat = temp_feat['feat']
+            temp_feat = backbone(all_buffer[500:])
+            feat = torch.cat((feat, temp_feat['feat']))
+            feat = feat.squeeze()
+        else:
             feat = backbone(all_buffer)
-        feat = feat['feat'].squeeze()
+            feat = feat['feat'].squeeze()
 
         feat_file_name.create_group(data_dir)
         feat_file_name[data_dir].create_dataset(name='avg_feat', data=feat.cpu().detach().numpy())

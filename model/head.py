@@ -16,8 +16,6 @@ class I3D_Recognition_Head(nn.Module):
         x = x.squeeze(2)
         x = x.squeeze(2)
         logits = self.linear(x)
-        # output = self.softmax(logits)
-        # return self.softmax(logits)
         return logits
 
 
@@ -30,27 +28,48 @@ class I3D_Head(nn.Module):
     
     def forward(self, x):
         # x = self.avg(x)
-        # x = x.squeeze(2)
-        # x = x.squeeze(2)
-        # x = x.squeeze(2)
+        # x = x.squeeze()
         x = F.relu(self.fc(x))
         return self.dropout(x)
 
 
 class Encoder_Head(nn.Module):
-    def __init__(self, action_num, in_dim=1024):
+    def __init__(self, action_num, in_dim=1024, drop_prob=0.1):
         super(Encoder_Head, self).__init__()
-        self.recog_fc = nn.Linear(in_dim, action_num)
+        self.recog_fc1 = nn.Linear(in_dim, in_dim)
+        self.dropout = nn.Dropout(drop_prob)
+        self.recog_fc2 = nn.Linear(in_dim, action_num)
 
     def forward(self, x):
-        logits = self.recog_fc(x)
+        logits = F.relu(self.recog_fc1(x))
+        logits = self.dropout(logits)
+        logits = self.recog_fc2(logits)
 
         return logits
 
 
 class Decoder_Head(nn.Module):
-    def __init__(self, ):
+    def __init__(self, action_num, in_dim=1024, drop_prob=0.1):
         super(Decoder_Head, self).__init__()
+        self.anti_fc1 = nn.Linear(in_dim, in_dim)
+        self.dropout = nn.Dropout(drop_prob)
+        self.anti_fc2 = nn.Linear(in_dim, action_num)
 
     def forward(self, x):
-        return x
+        logits = F.relu(self.anti_fc1(x))
+        logits = self.dropout(logits)
+        logits = self.anti_fc2(logits)
+
+        return logits
+
+class Decoder_Queries_Gen(nn.Module):
+    def __init__(self, in_dim=1024, drop_prob=0.1):
+        super(Decoder_Queries_Gen, self).__init__()
+        self.fc = nn.Linear(1, in_dim)
+        self.dropout = nn.Dropout(drop_prob)
+
+    def forward(self, bs, x):
+        x = x.expand(bs, x.shape[1])[:,:,None]
+        output = F.relu(self.fc(x))
+
+        return self.dropout(output)

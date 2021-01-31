@@ -1,6 +1,6 @@
 ''' Transformer: This code is mainly borrowed from 
     https://github.com/jadore801120/attention-is-all-you-need-pytorch  
-    Actually, there is an implementation in Pytorch
+    Actually, there is another implementation in Pytorch
     https://pytorch.org/docs/stable/_modules/torch/nn/modules/transformer.html#Transformer
 '''
 
@@ -12,6 +12,7 @@ import torch.nn.functional as F
 def get_pad_mask(seq_len, pad_num):
     pad_mask = None
     for i in pad_num:
+        i = int(i)
         temp = torch.ones(seq_len)
         # to avoid select all elements when i==0
         if i:
@@ -25,25 +26,27 @@ def get_sequence_mask(seq_len):
 
 
 class Transformer(nn.Module):
-    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1, max_len=128, pos_enc=True, use_dec=True):
+    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1, max_len=128, pos_enc=True, use_dec=True, return_attn=True):
         super(Transformer, self).__init__()
         
         self.use_dec = use_dec
+        self.return_attn = return_attn
         self.encoder = Encoder(n_layers=n_layers, n_attn_head=n_attn_head, d_input=d_input, 
                                d_inner=d_inner, d_qk=d_qk, d_v=d_v, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
         if use_dec:
             self.decoder = Decoder(n_layers=n_layers, n_attn_head=n_attn_head, d_input=d_input, 
                                d_inner=d_inner, d_qk=d_qk, d_v=d_v, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
 
-    def forward(self, src_seq, trg_seq, pad_num):
+    def forward(self, src_seq, trg_seq, enc_pad_num, dec_pad_num):
         # TODO: make the mask matrix
         src_mask = None; trg_mask = None
         # import ipdb; ipdb.set_trace()
-        src_mask = get_pad_mask(src_seq.shape[1], pad_num).to(src_seq.device)
-        trg_mask = (get_pad_mask(trg_seq.shape[1], pad_num) & get_sequence_mask(trg_seq.shape[1])).to(src_seq.device)
-        enc_output, enc_slf_attn_list = self.encoder(src_seq, src_mask, return_attn=False)
+        src_mask = get_pad_mask(src_seq.shape[1], enc_pad_num).to(src_seq.device)
+        # trg_mask = (get_pad_mask(trg_seq.shape[1], dec_pad_num) & get_sequence_mask(trg_seq.shape[1])).to(src_seq.device)
+        trg_mask = get_pad_mask(trg_seq.shape[1], dec_pad_num).to(src_seq.device)
+        enc_output, enc_slf_attn_list = self.encoder(src_seq, src_mask, return_attn=self.return_attn)
         if self.use_dec:
-            dec_output, dec_slf_attn_list, dec_enc_attn_list = self.decoder(trg_seq, enc_output, src_mask, trg_mask, return_attn=False) 
+            dec_output, dec_slf_attn_list, dec_enc_attn_list = self.decoder(trg_seq, enc_output, src_mask, trg_mask, return_attn=self.return_attn) 
             return enc_output, dec_output, enc_slf_attn_list, dec_slf_attn_list, dec_enc_attn_list
         else:
             return enc_output, enc_slf_attn_list
@@ -204,9 +207,18 @@ class FeedForward(nn.Module):
         self.dropout = nn.Dropout(drop_prob)
 
     def forward(self, x):
-        output = self.fc2(F.relu(self.fc1(x)))
-        output = self.dropout(output)
+        output = self.dropout(F.relu(self.fc1(x)))
+        output = self.dropout(self.fc2(output))
         output += x
         output = self.layer_norm(output)
 
         return output
+
+
+def _get_activation_fn(activation):
+    if activation == "relu":
+        return F.relu
+    elif activation == "gelu":
+        return F.gelu
+
+    raise RuntimeError("activation should be relu/gelu, not {}".format(activation))

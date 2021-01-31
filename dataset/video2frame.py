@@ -56,6 +56,7 @@ def video2images(path):
     for i in range(fcount):
         ret, frame = capture.read()
         if not ret and frame is None:
+            print("Miss a frame!!!")
             continue
         # save frame with specified frequency
         if count % EXTRACT_FREQUENCY == 0:
