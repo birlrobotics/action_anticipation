@@ -25,7 +25,7 @@ def dumps_json(object, file_name):
     data = json.dumps(object, sort_keys=True, indent=4)
     write(file_name, data, 'w')
 
-def mkdir_if_not_exists(dir_name, recursive=False):
+def mkdir_if_not_exists(dir_name, recursive=True):
     if os.path.exists(dir_name):
         return
     if recursive:

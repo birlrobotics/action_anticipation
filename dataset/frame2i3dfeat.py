@@ -26,12 +26,13 @@ def make_backbone(name='i3d', ck_dir=None, fixed=True):
     return model.features
 
 def normalize(buffer):    
-    means = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-    stds = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-    # normalization
-    buffer /= 255.0
-    # buffer = (buffer - means[None, None, None, None, :]) / stds[None, None, None, None, :]
-    buffer = (buffer - means) / stds
+    # means = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    # stds = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    # # normalization
+    # buffer /= 255.0
+    # # buffer = (buffer - means[None, None, None, None, :]) / stds[None, None, None, None, :]
+    # buffer = (buffer - means) / stds
+    buffer = buffer / 255.0 * 2.0 - 1.0              # normalized to [-1, 1], which is the normalization method used in original I3D model
     return buffer
 
 def sample(data_dir, frames, sample_ratio=1):

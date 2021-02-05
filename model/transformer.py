@@ -202,13 +202,14 @@ class FeedForward(nn.Module):
     def __init__(self, d_in, d_hid, drop_prob=0.1):
         super(FeedForward, self).__init__()
         self.fc1 = nn.Linear(d_in, d_hid)
+        self.dropout1 = nn.Dropout(drop_prob)
         self.fc2 = nn.Linear(d_hid, d_in)
+        self.dropout2 = nn.Dropout(drop_prob)
         self.layer_norm = nn.LayerNorm(d_in, eps=1e-6)
-        self.dropout = nn.Dropout(drop_prob)
-
+        
     def forward(self, x):
-        output = self.dropout(F.relu(self.fc1(x)))
-        output = self.dropout(self.fc2(output))
+        output = self.dropout1(F.relu(self.fc1(x)))
+        output = self.dropout2(self.fc2(output))
         output += x
         output = self.layer_norm(output)
 

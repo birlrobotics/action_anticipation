@@ -14,7 +14,8 @@ BF_CONFIG = {
     "video_len": 300,                 # uniformly sample clips, only available when the sample_mode is "uniform"
     "sample_num_each_clip": 8,
     "feat_hdf5_name": "i3d_feat_48class.hdf5",  # "i3d_feat_50class.hdf5" take "walk_in" and "walk_out" into account
-    "obs_perc": [.2, .3, .5], 
+    "train_obs_perc": [.2, .3, .5], 
+    "eval_obs_perc": [.2, .3, .5],
     # For transformer
     "n_layers": 2,
     "n_attn_head": 8,
@@ -30,9 +31,13 @@ BF_CONFIG = {
     "backbone": 'i3d',
     "cp_dir": "./checkpoints/i3d/rgb_imagenet.pkl",
     "fixed": True,
+    # For task head network
+    "head_layers": 1, 
     # For training
     "recog_weight": 1,
     "anti_weight": 1, 
+    # For testing
+    "pred_perc": [.1, .2, .3, .5], 
 }
 
 # 50 actions in total, but action "walk in" and "walk out" are not included in the original paper (48 fine-grained actions)

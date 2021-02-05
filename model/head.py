@@ -28,37 +28,51 @@ class I3D_Head(nn.Module):
     
     def forward(self, x):
         # x = self.avg(x)
-        # x = x.squeeze()
+        x = x.squeeze()
         x = F.relu(self.fc(x))
         return self.dropout(x)
 
 
 class Encoder_Head(nn.Module):
-    def __init__(self, action_num, in_dim=1024, drop_prob=0.1):
+    def __init__(self, action_num, in_dim=1024, layers=1, drop_prob=0.1):
         super(Encoder_Head, self).__init__()
-        self.recog_fc1 = nn.Linear(in_dim, in_dim)
-        self.dropout = nn.Dropout(drop_prob)
-        self.recog_fc2 = nn.Linear(in_dim, action_num)
+        self.layers = layers
+        if layers == 2:
+            self.recog_fc1 = nn.Linear(in_dim, in_dim)
+            self.dropout = nn.Dropout(drop_prob)
+            self.recog_fc2 = nn.Linear(in_dim, action_num)
+        else:
+            self.recog_fc = nn.Linear(in_dim, action_num)
 
     def forward(self, x):
-        logits = F.relu(self.recog_fc1(x))
-        logits = self.dropout(logits)
-        logits = self.recog_fc2(logits)
+        if self.layers==2:
+            logits = F.relu(self.recog_fc1(x))
+            logits = self.dropout(logits)
+            logits = self.recog_fc2(logits)
+        else:
+            logits = self.recog_fc(x)
 
         return logits
 
 
 class Decoder_Head(nn.Module):
-    def __init__(self, action_num, in_dim=1024, drop_prob=0.1):
+    def __init__(self, action_num, in_dim=1024, layers=1, drop_prob=0.1):
         super(Decoder_Head, self).__init__()
-        self.anti_fc1 = nn.Linear(in_dim, in_dim)
-        self.dropout = nn.Dropout(drop_prob)
-        self.anti_fc2 = nn.Linear(in_dim, action_num)
+        self.layers = layers
+        if layers == 2:
+            self.anti_fc1 = nn.Linear(in_dim, in_dim)
+            self.dropout = nn.Dropout(drop_prob)
+            self.anti_fc2 = nn.Linear(in_dim, action_num)
+        else:
+            self.anti_fc = nn.Linear(in_dim, action_num)
 
     def forward(self, x):
-        logits = F.relu(self.anti_fc1(x))
-        logits = self.dropout(logits)
-        logits = self.anti_fc2(logits)
+        if self.layers==2:
+            logits = F.relu(self.anti_fc1(x))
+            logits = self.dropout(logits)
+            logits = self.anti_fc2(logits)
+        else:
+            logits = self.anti_fc(x)
 
         return logits
 

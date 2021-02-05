@@ -4,7 +4,7 @@ ROS_PATH = '/opt/ros/kinetic/lib/python2.7/dist-packages'
 if ROS_PATH in sys.path:
     sys.path.remove(ROS_PATH)
 
-import os   
+import os
 import cv2
 import h5py
 import random
@@ -17,7 +17,7 @@ import utils.io as io
 from dataset.config import BF_CONFIG, BF_ACTION_CLASS
 
 _DatasetPath = BF_CONFIG["data_dir"]
-_ALLFILES = ['P'+str(i).zfill(2) for i in range(3, 55)]
+_ALLFILES = ['P'+str(i).zfill(2) for i in range(3, 55)]           
 
 class BreakfastDataset(Dataset):
     '''    
@@ -27,7 +27,7 @@ class BreakfastDataset(Dataset):
             task = ["recog_only", "recog_anti"]
             feat_type = ["online", "offline"]
     '''
-    def __init__(self, mode='train', split_idx=0, task='recog_only', feat_type='offline', anti_feat=False, preproc=None, over_write=False):
+    def __init__(self, mode='train', split_idx=0, task='recog_anti', feat_type='offline', anti_feat=False, preproc=None, over_write=False):
         super(BreakfastDataset, self).__init__()
         # prepare dataset
         # get original notation information
@@ -99,7 +99,7 @@ class BreakfastDataset(Dataset):
             all_buffer, all_label = self._sample(data_dir, frames, 1)
         else:
             all_buffer, all_label = self.data_feat[data_dir]["avg_feat"], self.data_feat[data_dir]["label"]
-        obs_perc = BF_CONFIG['obs_perc']
+        obs_perc = BF_CONFIG['train_obs_perc']
         obs_buffer_list = []; obs_label_list = []; obs_pad_num_list = []
         anti_buffer_list = []; anti_label_list = []; anti_pad_num_list = []
         for i in obs_perc:
@@ -244,51 +244,91 @@ class BreakfastDataset(Dataset):
 
     def _load_clips_all(self, data_dir, frames, random_sample=False):
         ori_video_len = len(frames) // BF_CONFIG['FPS']
-        labels = np.zeros((ori_video_len, len(BF_ACTION_CLASS)), np.dtype('float32'))
+        labels = np.zeros(ori_video_len, np.dtype('float32'))
         buffer = np.empty((ori_video_len, self.sample_num, BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
         temp = np.empty((self.sample_num, BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
         # TODO: optimize this part
+        gt_labels_list = []
+        for k, v in sorted(self.notation_info[data_dir].items(), key=lambda a: int(a[0].split('-')[0])):
+            if v=="walk_in" or v=="walk_out":
+                v='SIL'
+            gt_labels_list.extend([v]*int(int(k.split('-')[1])-int(k.split('-')[0])+1))
         for i in range(ori_video_len):
-            f4_idx = 0; f5_idx = 0
             if random_sample:
                 for idx, j in enumerate(sorted(random.sample(range(i*15, (i+1)*15), 8))):
                      # read image and convert it from BGR to RGB
                     frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
-                    temp[idx] = frame        
-                    if idx == 3: f4_idx = j 
-                    if idx == 4: f5_idx = j           
+                    temp[idx] = frame                
             else:
                 for idx, j in enumerate(range(i*15, (i+1)*15, 2)):
                     frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
                     temp[idx] = frame
-                    if idx == 3: f4_idx = j 
-                    if idx == 4: f5_idx = j 
             # get the label for each clip
-            f4_label = None; f5_label = None
-            for k, v in self.notation_info[data_dir].items():
-                if f4_label and f5_label:
-                    break
-                a, b = k.split('-')
-                if f4_idx+1 in range(int(a), int(b)):
-                    f4_label = v
-                if f5_idx+1 in range(int(a), int(b)):
-                    f5_label = v
-            labels[i][BF_ACTION_CLASS.index(f5_label if f4_label == f5_label else f4_label)] = 1
+            labels[i] = BF_ACTION_CLASS.index(gt_labels_list[i+8]) if gt_labels_list[i+7] == gt_labels_list[i+8] else BF_ACTION_CLASS.index(gt_labels_list[i+7])
             buffer[i] = temp
         return buffer, labels
 
     def _normalize(self, buffer):
         try:
-            means = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-            stds = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-            # normalization
-            buffer /= 255.0
-            # buffer = (buffer - means[None, None, None, None, :]) / stds[None, None, None, None, :]
-            buffer = (buffer - means) / stds
+            # means = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+            # stds = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+            # # normalization
+            # buffer /= 255.0
+            # # buffer = (buffer - means[None, None, None, None, :]) / stds[None, None, None, None, :]
+            # buffer = (buffer - means) / stds
+            buffer = buffer / 255.0 * 2.0 - 1.0              # normalized to [-1, 1], which is the normalization method used in original I3D model
             return buffer
         except Exception as e:
             import ipdb; ipdb.set_trace()
             print(e)
+
+
+class BreakfastDataset_Evaluation(BreakfastDataset):
+    def __init__(self, mode='test', split_idx=0, feat_type='online', gen_feat=False, preproc=None):
+        super(BreakfastDataset_Evaluation, self).__init__(mode='test', split_idx=0, feat_type=feat_type, preproc=None)
+        if not gen_feat:
+            self.data = h5py.File(os.path.join(BF_CONFIG["data_dir"], f"i3d_feat_eval_split_{split_idx}.hdf5"), 'r')
+        
+        self.gen_feat = gen_feat
+
+    def __len__(self):
+        return len(self.data_dir)
+
+    def __getitem__(self, index):
+        frame_path = self.data_dir[index]
+        if self.gen_feat:
+            frames = sorted([os.path.join(frame_path, img) for img in os.listdir(frame_path)])
+            all_buffer, all_label = self._load_clips_all(frame_path, frames)
+            obs_buffer_list = []; obs_pad_num_list = []; anti_pad_num_list = []
+            for i in BF_CONFIG['eval_obs_perc']:
+                obs_pad_num = 0; anti_pad_num = 0
+                obs_content = all_buffer[:int(i*all_buffer.shape[0])]
+                anti_content = all_buffer[int(i*all_buffer.shape[0]):int((0.5+i)*all_buffer.shape[0])]
+                if obs_content.shape[0] < self.video_len:
+                    obs_pad_num = self.video_len - obs_content.shape[0]
+                    obs_content = np.concatenate((obs_content, np.tile(obs_content[-1][None,:], (obs_pad_num, 1, 1, 1, 1))))
+                elif obs_content.shape[0] > self.video_len:
+                    n = obs_content.shape[0] - self.video_len
+                    obs_content = obs_content[n:]
+                else:
+                    pass
+                if anti_content.shape[0] < self.video_len:
+                    anti_pad_num = self.video_len - anti_content.shape[0]
+                else:
+                    pass
+                obs_buffer_list.append(obs_content[None, :]);  obs_pad_num_list.append(obs_pad_num); anti_pad_num_list.append(anti_pad_num)    
+
+            obs_buffer = np.concatenate(obs_buffer_list)
+            obs_pad_num = np.array(obs_pad_num_list)
+            anti_pad_num = np.array(anti_pad_num_list)
+
+            obs_buffer = self._normalize(obs_buffer).transpose((0, 1, 5, 2, 3, 4))
+
+            return torch.from_numpy(obs_buffer), obs_pad_num, anti_pad_num, frame_path      
+        
+        else:
+            return torch.from_numpy(self.data[frame_path]['feat'][:]), self.data[frame_path]['obs_pad_num'][:],\
+                   self.data[frame_path]['anti_pad_num'][:], frame_path
 
 ## just for recog_anti model
 def collate_fn_with_backbone(batch):
@@ -349,3 +389,41 @@ if __name__ == "__main__":
     for data in iter(dataset):
         print(data)
     print("test finished!!!")
+
+
+
+
+    # def _load_clips_all(self, data_dir, frames, random_sample=False):
+    #     ori_video_len = len(frames) // BF_CONFIG['FPS']
+    #     labels = np.zeros((ori_video_len, len(BF_ACTION_CLASS)), np.dtype('float32'))
+    #     buffer = np.empty((ori_video_len, self.sample_num, BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
+    #     temp = np.empty((self.sample_num, BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
+    #     # TODO: optimize this part
+    #     for i in range(ori_video_len):
+    #         f4_idx = 0; f5_idx = 0
+    #         if random_sample:
+    #             for idx, j in enumerate(sorted(random.sample(range(i*15, (i+1)*15), 8))):
+    #                  # read image and convert it from BGR to RGB
+    #                 frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+    #                 temp[idx] = frame        
+    #                 if idx == 3: f4_idx = j 
+    #                 if idx == 4: f5_idx = j           
+    #         else:
+    #             for idx, j in enumerate(range(i*15, (i+1)*15, 2)):
+    #                 frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+    #                 temp[idx] = frame
+    #                 if idx == 3: f4_idx = j 
+    #                 if idx == 4: f5_idx = j 
+    #         # get the label for each clip
+    #         f4_label = None; f5_label = None
+    #         for k, v in self.notation_info[data_dir].items():
+    #             if f4_label and f5_label:
+    #                 break
+    #             a, b = k.split('-')
+    #             if f4_idx+1 in range(int(a), int(b)):
+    #                 f4_label = v
+    #             if f5_idx+1 in range(int(a), int(b)):
+    #                 f5_label = v
+    #         labels[i][BF_ACTION_CLASS.index(f5_label if f4_label == f5_label else f4_label)] = 1
+    #         buffer[i] = temp
+    #     return buffer, labels

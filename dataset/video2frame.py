@@ -51,7 +51,6 @@ def video2images(path):
     EXTRACT_FREQUENCY = BF_CONFIG['EXTRACT_FREQUENCY']
     RESIZE_WIDTH = BF_CONFIG['RESIZE_WIDTH']
     RESIZE_HEIGHT = BF_CONFIG['RESIZE_HEIGHT']
-
     count = 0
     for i in range(fcount):
         ret, frame = capture.read()
@@ -156,7 +155,7 @@ if __name__ == "__main__":
         io.dumps_json(all_video_len, args.out_dir.replace('rgb_frame/' ,"all_video_len.json"))
         # all_video_len = io.loads_json(args.out_dir.replace('rgb_frame/' ,"all_video_len.json"))
         plot_all_video_len(sorted(all_video_len))
-    # WARNING: It will take much space to use h5py to save the date    
+    # WARNING: It will take much space to use h5py to save the raw date    
     else:
         breakfast_raw_img = h5py.File(os.path.join(args.out_dir, 'raw_img_data.hdf5'), 'w')
         all_video_len = []

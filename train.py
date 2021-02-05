@@ -5,23 +5,23 @@ from tqdm import tqdm
 import torch 
 import torchvision 
 from torch import nn, optim 
-from torch.utils.data import DataLoader 
+from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 
-from dataset.config import BF_CONFIG
-from model.main import Anticipation_With_Backbone, Anticipation_Without_Backbone 
+from dataset.config import BF_CONFIG, BF_ACTION_CLASS
+from model.main import Anticipation_With_Backbone, Anticipation_Without_Backbone
 from dataset.breakfast_dataset import BreakfastDataset, collate_fn_with_backbone, collate_fn_without_backbone
 import utils.io as io
 
 import argparse 
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
+os.environ['CUDA_VISIBLE_DEVICES'] = '1' 
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Anticipation Training.")
     # For model
-    parser.add_argument('--use_dec', action="store_true", 
-                        help='use decoder or not: action="store_true"')
+    parser.add_argument('--use_dec', action="store_false", 
+                        help='use decoder or not: action="store_false')
     # For dataset
     parser.add_argument('--split_idx', type=int, default=0, choices=[0,1,2,3], 
                         help='dataset splited configuration: default=0')
@@ -40,8 +40,10 @@ def arg_parse():
                         help='the size of minibatch: default=1')
     parser.add_argument('--optim', type=str, default='adam', 
                         help='which optimizer to be used: default=adam')
-    parser.add_argument('--lr', type=float, default=0.0001, 
+    parser.add_argument('--lr', type=float, default=0.00001, 
                         help='learning rate: default=0.0001')
+    parser.add_argument('--warmup', action="store_true", 
+                        help='warmup stratery: action="store_true"')
     parser.add_argument('--epoch', type=int, default=300, 
                         help='Number of training epoch: default=100')
     parser.add_argument('--start_epoch', type=int, default=0,
@@ -56,7 +58,7 @@ def arg_parse():
     parser.add_argument('--print_every', type=int, default=10,
                         help='number of steps for printing training and validation loss: 10')
     parser.add_argument('--save_every', type=int, default=20,
-                        help='number of steps for saving the model parameters: 50')
+                        help='number of steps for saving the model parameters: 20')
     return parser.parse_args() 
 
 
@@ -76,7 +78,7 @@ def train_model_recog_anti():
     print("Training on {}.".format(device))
 
     # prepare the model
-    assert args.use_dec == (args.task=="recog_anti"), "args.use_dec should be TRUE if args.task==recog_anti, vice versa" 
+    assert args.use_dec == (args.task=="recog_anti"), f"args.use_dec(={args.use_dec}) should be TRUE if args.task(={args.task}) == recog_anti, vice versa." 
     if args.feat_type == "online":
         model = Anticipation_With_Backbone(use_dec=args.use_dec)
     else:
@@ -103,9 +105,6 @@ def train_model_recog_anti():
     else:
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=0, amsgrad=True)
     # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.scheduler_step, gamma=0.1)
-    # for param_group in model.param_groups:
-        # param_group['lr'] = new_lr
-    # rec_criterion = nn.BCEWithLogitsLoss()
     recog_criterion = nn.CrossEntropyLoss(reduction='sum')    # 'mean' 'sum' 'none'
     anti_criterion = nn.CrossEntropyLoss(reduction='sum')
 
@@ -117,6 +116,17 @@ def train_model_recog_anti():
     time_seq = torch.arange(1, BF_CONFIG['video_len']+1).float().to(device)[None,:] / BF_CONFIG["queries_norm_factor"]
     t1 = time.time()
     for epoch in range(args.start_epoch, args.epoch):
+        # warmup strategy
+        if args.warmup:
+            if epoch == 0:
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = args.lr*0.01
+            if epoch == 10:                
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = args.lr*0.1
+            if epoch == 20:                
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = args.lr
         loss_list = []
         for phase in phase_list:
             s_t = time.time()
@@ -164,6 +174,7 @@ def train_model_recog_anti():
             if epoch == 0 or (epoch % args.print_every) == 9:
                 e_t = time.time()
                 print(f"Phase:[{phase}] Epoch:[{epoch+1}/{args.epoch}]  Recog_Loss:[{round(recog_epoch_loss, 4)}] Anti_Loss:[{round(anti_epoch_loss, 4)}] Execution_time:[{round(e_t-s_t, 1)}] second")
+
         # plot loss
         assert len(phase_list) == len(loss_list)
         if len(phase_list) == 2:
@@ -181,7 +192,7 @@ def train_model_recog_anti():
 
     writer.close()
     t2 = time.time()
-    print("Training finished! It takes {} seconds.".foramt(round(t2-t1, 1)))
+    print("Training finished! It takes {} seconds.".format(round(t2-t1, 1)))
 
 def train_model_recog_only():
     # prepare the data
@@ -281,7 +292,7 @@ def train_model_recog_only():
         # save training information and checkpoint
         if epoch % args.save_every == (args.save_every - 1) and epoch >= 0:
             opts = {'lr': args.lr, 'b_s': args.bs, 'optim': args.optim, 'use_dec': args.use_dec}
-            save_info = {"arguments": opts, "config": BF_CONFIG}
+            save_info = {"arguments": opts, "config": BF_CONFIG, 'parameters': param_dict}
             io.dumps_json(save_info, os.path.join(args.save_dir, args.ds, args.exp_ver, 'training_info.json'))
             save_name = "checkpoint_" + str(epoch+1) + "_epoch.pth"
             torch.save(model.state_dict(), os.path.join(args.save_dir, args.ds, args.exp_ver, save_name))
