@@ -55,7 +55,6 @@ class Transformer(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, max_len, drop_prob=0.1, pos_enc=True):
         super(Encoder, self).__init__()
-        # TODO: finish the PositionalEncoding()
         self.position_enc = PositionalEncoding(d_input=d_input, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
         self.encoder_stack = nn.ModuleList([EncoderLayer(n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob) for _ in range(n_layers)])
         # self.layer_norm = nn.LayerNorm(d_input, eps=1e-6)
@@ -107,7 +106,8 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         if self.pos_enc:
             x = x + self.pe[:, :x.size(1), :]
-            return self.dropout(x)
+            # return self.dropout(x)
+            return x
         else:
             return x
 
@@ -150,7 +150,7 @@ class MultiHeadAttention(nn.Module):
         self.fc_ks = nn.Linear(d_input, n_attn_head * d_qk, bias=False)
         self.fc_vs = nn.Linear(d_input, n_attn_head * d_v, bias=False)
 
-        self.attention = ScaledDotProductAttention(temperature = d_qk ** 0.5)
+        self.attention = ScaledDotProductAttention(temperature = d_qk ** 0.5, attn_drop_prob=0)
 
         self.fc = nn.Linear(n_attn_head * d_v, d_input, bias=False)
         self.dropout = nn.Dropout(drop_prob)
@@ -172,7 +172,6 @@ class MultiHeadAttention(nn.Module):
             mask = mask.unsqueeze(1)
 
         output, attn = self.attention(q, k, v, mask)
-
         output = output.transpose(1, 2).contiguous().view(sz_b, len_q, -1)
         output = self.dropout(self.fc(output))
         output += queries
@@ -182,7 +181,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class ScaledDotProductAttention(nn.Module):
-    def __init__(self, temperature, attn_drop_prob=0.1):
+    def __init__(self, temperature, attn_drop_prob=0):
         super(ScaledDotProductAttention, self).__init__()
         self.temperature = temperature
         self.dropout = nn.Dropout(attn_drop_prob)
@@ -191,8 +190,8 @@ class ScaledDotProductAttention(nn.Module):
         attn_scores = torch.matmul(q / self.temperature, k.transpose(2,3))
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, -1e9)
-
-        attn_probs = self.dropout(F.softmax(attn_scores, dim=1))
+        
+        attn_probs = self.dropout(F.softmax(attn_scores, dim=-1))
         output = torch.matmul(attn_probs, v)
 
         return output, attn_probs

@@ -15,7 +15,7 @@ import utils.io as io
 
 import argparse 
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1' 
+os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Anticipation Training.")

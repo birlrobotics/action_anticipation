@@ -23,14 +23,16 @@ BF_CONFIG = {
     "d_inner": 2048,
     "d_qk": 64,
     "d_v": 64,
-    "drop_prob": 0.1,
+    "drop_prob": 0.3,
     "pos_enc": True,
-    "queries_norm_factor": 60.,
+    "queries_norm_factor": 300.,
     "return_attn": True,
     # For backbone
     "backbone": 'i3d',
     "cp_dir": "./checkpoints/i3d/rgb_imagenet.pkl",
     "fixed": True,
+    # For backbone head
+    "use_fc": True,
     # For task head network
     "head_layers": 1, 
     # For training

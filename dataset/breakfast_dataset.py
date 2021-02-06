@@ -65,6 +65,18 @@ class BreakfastDataset(Dataset):
                     split_data["trainval"].append(j)
         split_data["test"] = [j for j in self.notation_info if j not in split_data["trainval"]]
         split_data["train"], split_data["val"] = train_test_split(split_data["trainval"], test_size=test_size, random_state=42)
+        # record the status after segmentation
+        all = {}
+        for k in split_data.keys():
+            temp = {}
+            for v in split_data[k]:
+                action = v.split('/')[-1]
+                if action not in temp.keys():
+                    temp[action] = 1
+                else:
+                    temp[action] += 1
+            all[k] = temp
+        split_data['status'] = all
         io.dumps_json(split_data, os.path.join(_DatasetPath, "split" + str(split_idx) + '.json'))
         self.data_dir = split_data[mode].copy()
         del split_data

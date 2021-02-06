@@ -11,7 +11,7 @@ class Anticipation_Without_Backbone(nn.Module):
     def __init__(self, use_dec=True, train=True):
         super(Anticipation_Without_Backbone, self).__init__()
         self.use_dec = use_dec
-        self.i3d_head = I3D_Head(d_in=BF_CONFIG["d_input"], drop_prob=BF_CONFIG["drop_prob"])
+        self.i3d_head = I3D_Head(d_in=BF_CONFIG["d_input"], drop_prob=BF_CONFIG["drop_prob"], use_fc=BF_CONFIG['use_fc'])
         self.queries_gen = Decoder_Queries_Gen(in_dim=BF_CONFIG["d_input"], drop_prob=BF_CONFIG["drop_prob"])
         self.transformer = Transformer(BF_CONFIG["n_layers"], BF_CONFIG["n_attn_head"], BF_CONFIG["d_input"], 
                                        BF_CONFIG["d_inner"], BF_CONFIG["d_qk"], BF_CONFIG["d_v"], BF_CONFIG["drop_prob"], 
@@ -19,14 +19,15 @@ class Anticipation_Without_Backbone(nn.Module):
         self.enc_head = Encoder_Head(len(BF_ACTION_CLASS), in_dim=BF_CONFIG["d_input"], layers=BF_CONFIG['head_layers'], drop_prob=BF_CONFIG["drop_prob"])
         self.dec_head = Decoder_Head(len(BF_ACTION_CLASS), in_dim=BF_CONFIG["d_input"], layers=BF_CONFIG['head_layers'], drop_prob=BF_CONFIG["drop_prob"])
 
-        # initialization
-        if train:
-            # for p in self.transformer.parameters():
-            for p in self.parameters():
-                if p.dim() > 1:
-                    nn.init.xavier_uniform_(p)
+        # # initialization
+        # if train:
+        #     # for p in self.transformer.parameters():
+        #     for p in self.parameters():
+        #         if p.dim() > 1:
+        #             nn.init.xavier_uniform_(p)
 
     def forward(self, obs_feat, queries, enc_pad_num, dec_pad_num):
+        # import ipdb; ipdb.set_trace()
         backbone_feat = self.i3d_head(obs_feat)
         if self.use_dec:
             queries = self.queries_gen(obs_feat.shape[0], queries)
@@ -53,17 +54,16 @@ class Anticipation_With_Backbone(nn.Module):
         self.enc_head = Encoder_Head(len(BF_ACTION_CLASS), in_dim=BF_CONFIG["d_input"], layers=BF_CONFIG['head_layers'], drop_prob=BF_CONFIG["drop_prob"])
         self.dec_head = Decoder_Head(len(BF_ACTION_CLASS), in_dim=BF_CONFIG["d_input"], layers=BF_CONFIG['head_layers'], drop_prob=BF_CONFIG["drop_prob"])
 
-        # initialization
-        if train:
-            for p in self.named_parameters():
-                if "backbone" in p[0]:
-                    continue
-                if p[1].dim() > 1:
-                    nn.init.xavier_uniform_(p[1])
+        # # initialization
+        # if train:
+        #     for p in self.named_parameters():
+        #         if "backbone" in p[0]:
+        #             continue
+        #         if p[1].dim() > 1:
+        #             nn.init.xavier_uniform_(p[1])
 
     def forward(self, obs_feat, queries, enc_pad_num, dec_pad_num):
         backbone_feat = None
-        # import ipdb; ipdb.set_trace()
         for i in range(obs_feat.shape[0]):
             temp_feat = self.backbone(obs_feat[i])
             temp_feat = self.i3d_head(temp_feat['feat'])
