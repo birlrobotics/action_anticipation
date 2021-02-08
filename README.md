@@ -13,5 +13,4 @@
 - [ ] shall we need a Conv layer in I3D head instead of average pooling?
 
 ### IDEAS
-
 - [x] Transformer

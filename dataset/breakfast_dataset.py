@@ -27,9 +27,15 @@ class BreakfastDataset(Dataset):
             task = ["recog_only", "recog_anti"]
             feat_type = ["online", "offline"]
     '''
-    def __init__(self, mode='train', split_idx=0, task='recog_anti', feat_type='offline', anti_feat=False, preproc=None, over_write=False):
+    def __init__(self, mode='train', split_idx=0, task='recog_anti', feat_type='offline', data_type='all', anti_feat=False, preproc=None, over_write=False, evaluation=False):
         super(BreakfastDataset, self).__init__()
-        # prepare dataset
+        self.video_len = BF_CONFIG['video_len']
+        self.sample_num = BF_CONFIG['sample_num_each_clip']
+        self.load_mode = BF_CONFIG['load_mode']
+        self.task = task
+        self.anti_feat = anti_feat
+        self.feat_type = feat_type
+        self.data_type = data_type
         # get original notation information
         self.notation_info = io.loads_json(os.path.join(_DatasetPath, "notation.json"))
         if feat_type == "offline":
@@ -41,13 +47,10 @@ class BreakfastDataset(Dataset):
             del all_data
         else:
             self._split_data(mode, split_idx, BF_CONFIG["test_size"])
-        
-        self.video_len = BF_CONFIG['video_len']
-        self.sample_num = BF_CONFIG['sample_num_each_clip']
-        self.load_mode = BF_CONFIG['load_mode']
-        self.task = task
-        self.anti_feat = anti_feat
-        self.feat_type = feat_type
+
+        if data_type == "all" and not evaluation:
+            self.all_data = self._recog_anti_all_data_gen(self.data_dir)
+            del self.data_feat
 
         # _, self.data_dir = train_test_split(self.data_dir, test_size=BF_CONFIG["test_size"], random_state=42)
 
@@ -82,7 +85,10 @@ class BreakfastDataset(Dataset):
         del split_data
 
     def __len__(self):
-        return len(self.data_dir)
+        if self.data_type == 'all':
+            return len(self.all_data)
+        else:
+            return len(self.data_dir)
 
     def __getitem__(self, index):
         if self.task == 'recog_only':
@@ -95,15 +101,77 @@ class BreakfastDataset(Dataset):
             
             return torch.from_numpy(clips), torch.from_numpy(labels), pad_num
         else:
-            obs_clips, obs_labels, obs_pad_num, anti_clips, anti_labels, anti_pad_num \
-                                        = self._recog_anti_data_gen(self.data_dir[index])
+            if self.data_type == 'all':
+                obs_clips, obs_labels, obs_pad_num, anti_clips, anti_labels, anti_pad_num, data_dir \
+                                            = self.all_data[index]
+            else:
+                obs_clips, obs_labels, obs_pad_num, anti_clips, anti_labels, anti_pad_num \
+                                            = self._recog_anti_data_gen(self.data_dir[index])
+                data_dir = self.data_dir[index]
             if self.feat_type == 'online':
                 obs_clips = self._normalize(obs_clips).transpose((0, 1, 5, 2, 3, 4))
             if self.anti_feat and self.feat_type=="online":
                 anti_clips = self._normalize(anti_clips).transpose((0, 1, 5, 2, 3, 4))
             return torch.from_numpy(obs_clips), torch.from_numpy(obs_labels), obs_pad_num, \
                    torch.from_numpy(anti_clips), torch.from_numpy(anti_labels), anti_pad_num, \
-                   self.data_dir[index]
+                   data_dir
+
+    def _recog_anti_all_data_gen(self, data_dir_list):
+        all_data = []
+        for data_dir in data_dir_list:
+            if self.feat_type == 'online':
+                frames = sorted([os.path.join(data_dir, img) for img in os.listdir(data_dir)])
+                all_buffer, all_label = self._sample(data_dir, frames, 1)
+            else:
+                all_buffer, all_label = self.data_feat[data_dir]["avg_feat"], self.data_feat[data_dir]["label"]
+            obs_perc = BF_CONFIG['train_obs_perc']
+            obs_buffer_list = []; obs_label_list = []; obs_pad_num_list = []
+            anti_buffer_list = []; anti_label_list = []; anti_pad_num_list = []
+            data_dir_list = []
+            for i in obs_perc:
+                obs_content = all_buffer[:int(i*all_buffer.shape[0])]
+                obs_label = all_label[:int(i*all_label.shape[0])]
+                anti_content = np.array([], np.float32)
+                if self.anti_feat:
+                    anti_content = all_buffer[int(i*all_buffer.shape[0]):int((0.5+i)*all_buffer.shape[0])]
+                anti_label = all_label[int(i*all_buffer.shape[0]):int((0.5+i)*all_buffer.shape[0])]
+                obs_pad_num = 0; anti_pad_num = 0
+                if obs_content.shape[0] < self.video_len:
+                    obs_pad_num = self.video_len - obs_content.shape[0]
+                    if self.feat_type == 'online':
+                        obs_content = np.concatenate((obs_content, np.tile(obs_content[-1][None,:], (obs_pad_num, 1, 1, 1, 1))))
+                    else:
+                        obs_content = np.concatenate((obs_content, np.tile(obs_content[-1][None,:], (obs_pad_num, 1))))
+                    obs_label = np.concatenate((obs_label, np.array([-100]*obs_pad_num)))
+                elif obs_content.shape[0] > self.video_len:
+                    omit_idxs = sorted(random.sample((range(obs_content.shape[0])), int(obs_content.shape[0]-self.video_len)))
+                    obs_content = np.delete(obs_content, omit_idxs, axis=0)
+                    obs_label = np.delete(obs_label, omit_idxs)
+                else:
+                    pass
+                if anti_label.shape[0] < self.video_len:
+                    anti_pad_num = self.video_len - anti_label.shape[0]
+                    if self.anti_feat:
+                        if self.feat_type == 'online':
+                            anti_content = np.concatenate((anti_content, np.tile(anti_content[-1][None, :], (anti_pad_num, 1, 1, 1, 1))))
+                        else:
+                            anti_content = np.concatenate((anti_content, np.tile(anti_content[-1][None, :], (anti_pad_num, 1))))
+                    anti_label = np.concatenate((anti_label, np.array([-100]*anti_pad_num)))
+                elif anti_label.shape[0] > self.video_len:
+                    omit_idxs = sorted(random.sample((range(anti_label.shape[0])), int(anti_label.shape[0]-self.video_len)))
+                    if self.anti_feat:
+                        anti_content = np.delete(anti_content, omit_idxs, axis=0)
+                    anti_label = np.delete(anti_label, omit_idxs)
+                else:
+                    pass
+                obs_buffer_list.append(obs_content[None, :]); obs_label_list.append(obs_label[None,:]); obs_pad_num_list.append([obs_pad_num])
+                anti_buffer_list.append(anti_content[None, :]); anti_label_list.append(anti_label[None, :]); anti_pad_num_list.append([anti_pad_num])
+                data_dir_list.append(data_dir)
+
+            for data in zip(obs_buffer_list, obs_label_list, obs_pad_num_list, anti_buffer_list, anti_label_list, anti_pad_num_list, data_dir_list):
+                all_data.append(data)
+        
+        return all_data 
 
     def _recog_anti_data_gen(self, data_dir):
         if self.feat_type == 'online':
@@ -296,10 +364,10 @@ class BreakfastDataset(Dataset):
 
 
 class BreakfastDataset_Evaluation(BreakfastDataset):
-    def __init__(self, mode='test', split_idx=0, feat_type='online', gen_feat=False, preproc=None):
-        super(BreakfastDataset_Evaluation, self).__init__(mode='test', split_idx=0, feat_type=feat_type, preproc=None)
+    def __init__(self, mode='test', split_idx=0, feat_type='online', gen_feat=False, preproc=None, evaluation=True):
+        super(BreakfastDataset_Evaluation, self).__init__(mode=mode, split_idx=split_idx, feat_type=feat_type, preproc=None, evaluation=evaluation)
         if not gen_feat:
-            self.data = h5py.File(os.path.join(BF_CONFIG["data_dir"], f"i3d_feat_eval_split_{split_idx}.hdf5"), 'r')
+            self.data = h5py.File(os.path.join(BF_CONFIG["data_dir"], f"i3d_feat_eval_split_{split_idx}_{mode}.hdf5"), 'r')
         
         self.gen_feat = gen_feat
 
@@ -391,10 +459,11 @@ def collate_fn_without_backbone(batch):
             batch_anti_clips = torch.cat((batch_anti_clips, data[3]))
         batch_anti_labels = torch.cat((batch_anti_labels, data[4]))
         batch_anti_pad_num = np.concatenate((batch_anti_pad_num, data[5]))
-        batch_img_dir.append(data[6])
+        # batch_img_dir.append(data[6])
 
     return batch_obs_clips, batch_obs_labels, batch_obs_pad_num, \
-           batch_anti_clips, batch_anti_labels, batch_anti_pad_num, batch_img_dir
+           batch_anti_clips, batch_anti_labels, batch_anti_pad_num, \
+           batch_img_dir
 
 if __name__ == "__main__":
     dataset = BreakfastDataset()

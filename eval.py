@@ -28,6 +28,8 @@ def arg_parse():
                         help='The dataset you want to train: default=breakfast')
     parser.add_argument('--ow_feat', action='store_true',  
                         help='overwrite the backbone  feature')
+    parser.add_argument('--mode', type=str, default='test', 
+                        help='default=test')    
     return parser.parse_args()
 
 def evaluation():
@@ -38,7 +40,7 @@ def evaluation():
 
     # prepare data
     if args.ds == 'breakfast':
-        test_set = BreakfastDataset_Evaluation(mode="test", split_idx=args.split_idx, gen_feat=False)
+        test_set = BreakfastDataset_Evaluation(mode=args.mode, split_idx=args.split_idx, gen_feat=False, evaluation=True)
         test_dataloader = DataLoader(dataset=test_set, batch_size=1, shuffle=False, num_workers=0)
         print(F"Finish preparing testing data for {args.ds} split {args.split_idx}.")
 
@@ -81,7 +83,7 @@ def evaluation():
         
         with torch.no_grad():
             recog_logits, anti_logits, *attn = model(obs_feat, time_seq, obs_pad_num, anti_pad_num)
-            # import ipdb; ipdb.set_trace()
+            import ipdb; ipdb.set_trace()
             recog_scores, anti_scores = torch.nn.Softmax(-1)(recog_logits), torch.nn.Softmax(-1)(anti_logits)
             top_recog_probs, top_recog_class = recog_scores.topk(1, dim=-1)
             top_anti_probs, top_anti_class = anti_scores.topk(1, dim=-1)
@@ -147,24 +149,25 @@ def evaluation():
 def create_backbone_feat():
     # prepare data
     if args.ds == 'breakfast':
-        test_set = BreakfastDataset_Evaluation(mode="test", split_idx=args.split_idx, gen_feat=True)
+        test_set = BreakfastDataset_Evaluation(mode=args.mode, split_idx=args.split_idx, gen_feat=True)
         test_dataloader = DataLoader(dataset=test_set, batch_size=1, shuffle=False, num_workers=0)
-        print(F"Finish preparing testing data for {args.ds} split {args.split_idx}.")
+        print(F"Generate backbone feature for {args.ds} split {args.split_idx}.")
     # set up the model. NOTE: you need to update the 'dataset/config.py' file based on the saving configuration of the checkpoints
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print("Testing on {}.".format(device))
     backbone = Anticipation_With_Backbone(train=False).backbone.to(device)
     backbone.eval()
 
-    feat_file_name = h5py.File(os.path.join("dataset", args.ds, f"i3d_feat_eval_split_{args.split_idx}.hdf5"), 'w')
+    feat_file_name = h5py.File(os.path.join("dataset", args.ds, f"i3d_feat_eval_split_{args.split_idx}_{args.mode}.hdf5"), 'w')
     for data in tqdm(test_dataloader):
         obs_feat = data[0][0].to(device)
         obs_pad_num = data[1][0]
         anti_pad_num = data[2][0]
         data_dir = data[3][0]
         backbone_feat = None
+        # import ipdb; ipdb.set_trace()
         for i in range(obs_feat.shape[0]):
-            feat = backbone(obs_feat[0])['feat']
+            feat = backbone(obs_feat[i])['feat']
             feat = feat.squeeze()
             backbone_feat = torch.cat((backbone_feat, feat[None, :])) if backbone_feat is not None else feat[None, :]
         feat_file_name.create_group(data_dir)

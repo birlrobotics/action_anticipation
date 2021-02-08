@@ -15,7 +15,7 @@ import utils.io as io
 
 import argparse 
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
+# os.environ['CUDA_VISIBLE_DEVICES'] = '1' 
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Anticipation Training.")
@@ -115,6 +115,7 @@ def train_model_recog_anti():
     # start training
     time_seq = torch.arange(1, BF_CONFIG['video_len']+1).float().to(device)[None,:] / BF_CONFIG["queries_norm_factor"]
     t1 = time.time()
+    train_iter_num = 0
     for epoch in range(args.start_epoch, args.epoch):
         # warmup strategy
         if args.warmup:
@@ -167,6 +168,13 @@ def train_model_recog_anti():
                 anti_epoch_loss += anti_loss.item()
                 recog_sample_num += (obs_labels.shape.numel() - obs_pad_num.sum())
                 anti_sample_num += (anti_labels.shape.numel() - anti_pad_num.sum())
+                # plot training loss iteration by tieration
+                if phase == 'train':
+                    r_loss = recog_loss.item()/(obs_labels.shape.numel() - obs_pad_num.sum())
+                    a_loss = anti_loss.item()/(anti_labels.shape.numel() - anti_pad_num.sum())
+                    i_loss = r_loss + a_loss
+                    writer.add_scalars('train_iter_loss', {'recog': r_loss, 'anti': a_loss, 'all': i_loss}, train_iter_num)
+                    train_iter_num += 1
             recog_epoch_loss /= recog_sample_num
             anti_epoch_loss /= anti_sample_num
             loss_list.append([recog_epoch_loss, anti_epoch_loss])
@@ -178,10 +186,10 @@ def train_model_recog_anti():
         # plot loss
         assert len(phase_list) == len(loss_list)
         if len(phase_list) == 2:
-            writer.add_scalars('train_val_loss', {'train_loss': sum(loss_list[0]), 'train_recog_loss': loss_list[0][0], 'train_anti_loss': loss_list[0][1], \
-                                                  'val_loss': sum(loss_list[1]), 'val_recog_loss': loss_list[1][0], 'val_anti_loss': loss_list[1][1]}, epoch)
+            writer.add_scalars('train_val_epoch_loss', {'train_loss': sum(loss_list[0]), 'train_recog_loss': loss_list[0][0], 'train_anti_loss': loss_list[0][1], \
+                                                        'val_loss': sum(loss_list[1]), 'val_recog_loss': loss_list[1][0], 'val_anti_loss': loss_list[1][1]}, epoch)
         else:
-            writer.add_scalars('trainval_loss', {'trainval_loss': sum(loss_list[0]), 'recog_loss': loss_list[0][0], 'anti_loss': loss_list[0][1]}, epoch)
+            writer.add_scalars('trainval_epoch_loss', {'trainval_loss': sum(loss_list[0]), 'recog_loss': loss_list[0][0], 'anti_loss': loss_list[0][1]}, epoch)
         # save training information and checkpoint
         if epoch % args.save_every == (args.save_every - 1) and epoch >= 0:
             opts = {'lr': args.lr, 'b_s': args.bs, 'optim': args.optim, 'use_dec': args.use_dec}
