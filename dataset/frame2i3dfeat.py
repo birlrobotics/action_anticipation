@@ -65,6 +65,7 @@ def sample(data_dir, frames, sample_ratio=1):
             if clip_num == 2:
                 s_list = [int(a), int(b)-15]
             else:
+                # random choice is redundant when save the train data offline
                 s_list = random.sample((range(int(a)+15, int(b)-15, 15)), int(clip_num-2))
                 s_list.extend([int(a), int(b)-15])
             for s in sorted(s_list):

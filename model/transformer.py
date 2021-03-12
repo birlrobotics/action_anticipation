@@ -40,7 +40,6 @@ class Transformer(nn.Module):
     def forward(self, src_seq, trg_seq, enc_pad_num, dec_pad_num):
         # TODO: make the mask matrix
         src_mask = None; trg_mask = None
-        # import ipdb; ipdb.set_trace()
         src_mask = get_pad_mask(src_seq.shape[1], enc_pad_num).to(src_seq.device)
         # trg_mask = (get_pad_mask(trg_seq.shape[1], dec_pad_num) & get_sequence_mask(trg_seq.shape[1])).to(src_seq.device)
         trg_mask = get_pad_mask(trg_seq.shape[1], dec_pad_num).to(src_seq.device)
@@ -190,6 +189,7 @@ class ScaledDotProductAttention(nn.Module):
         attn_scores = torch.matmul(q / self.temperature, k.transpose(2,3))
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, -1e9)
+                
         
         attn_probs = self.dropout(F.softmax(attn_scores, dim=-1))
         output = torch.matmul(attn_probs, v)
@@ -210,6 +210,7 @@ class FeedForward(nn.Module):
         output = self.dropout1(F.relu(self.fc1(x)))
         output = self.dropout2(self.fc2(output))
         output += x
+        # import ipdb; ipdb.set_trace()
         output = self.layer_norm(output)
 
         return output

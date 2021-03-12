@@ -26,6 +26,9 @@ class BreakfastDataset(Dataset):
             mode = ["trainval", "train", "val"]
             task = ["recog_only", "recog_anti"]
             feat_type = ["online", "offline"]
+            data_type: 'all' means we create all types of data with three obs_prec ([0.2,0.3,0.5]) in one time 
+                        so that we can shuffle the data from different videos instead of using the three serial data of a video.
+            anti_feat: return the anticipation features or not.  
     '''
     def __init__(self, mode='train', split_idx=0, task='recog_anti', feat_type='offline', data_type='all', anti_feat=False, preproc=None, over_write=False, evaluation=False):
         super(BreakfastDataset, self).__init__()
@@ -42,9 +45,9 @@ class BreakfastDataset(Dataset):
             self.data_feat = h5py.File(os.path.join(BF_CONFIG["data_dir"], BF_CONFIG["feat_hdf5_name"]), 'r')
         
         if not over_write and os.path.exists(os.path.join(_DatasetPath, "split" + str(split_idx) + '.json')):
-            all_data = io.loads_json(os.path.join(_DatasetPath, "split" + str(split_idx) + '.json'))
-            self.data_dir = all_data[mode].copy()
-            del all_data
+            all_data_dir = io.loads_json(os.path.join(_DatasetPath, "split" + str(split_idx) + '.json'))
+            self.data_dir = all_data_dir[mode].copy()
+            del all_data_dir
         else:
             self._split_data(mode, split_idx, BF_CONFIG["test_size"])
 
@@ -262,7 +265,7 @@ class BreakfastDataset(Dataset):
         labels_list = []
         buffer_list = []
         # sample the frames within each segment
-        for k, v in sorted(self.notation_info[data_dir].items(), key=lambda a: int(a[0].split('-')[0])):
+        for k, v in sorted(notation_info[data_dir].items(), key=lambda a: int(a[0].split('-')[0])):
             # temp_label = np.zeros(len(BF_ACTION_CLASS), np.dtype('float32'))
             a, b= k.split('-')
             # skip the extremely short segments
@@ -270,54 +273,44 @@ class BreakfastDataset(Dataset):
                 continue
             # clip_num = (int(b)-int(a))*sample_ratio // 15 if (int(b)-int(a))*sample_ratio // 15 else 1
             clip_num = round((int(b)-int(a))*sample_ratio / 15)
-            try:
-                for s in sorted(random.sample((range(int(a), int(b), 15)), int(clip_num))):
-                    temp_data = np.empty((self.sample_num, BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
-                    # to ensure each segment have at least one clip
-                    if clip_num == 1:
-                        if int(b) > len(frames):
-                            break
-                        s = int(a) if int(b)-8==int(a) else random.choice(range(int(a), int(b)-8))
-                        for i, j in enumerate(range(s, s+8)):
-                            frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
-                            temp_data[i] = frame   
-                        # temp_label[BF_ACTION_CLASS.index(v)] = 1 
-                        # labels_list.append(temp_label)
-                        buffer_list.append(temp_data)
-                        if v=="walk_in" or v=="walk_out":
-                            v='SIL'
-                        labels_list.append(BF_ACTION_CLASS.index(v))
-                        break   
-                    # set "flag" to avoid the empty temp_data                 
-                    flag = False
-                    if s+15 <= int(b):
-                        if s+15 > len(frames):
-                            break
-                        flag = True
+            if clip_num == 1:
+                if int(b) > len(frames):
+                    continue
+                temp_data = np.empty((BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
+                s = int(a) if int(b)-8==int(a) else random.choice(range(int(a), int(b)-8))
+                for i, j in enumerate(range(s, s+8)):
+                    temp_frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+                    temp_data[i] = temp_frame   
+                buffer_list.append(temp_data)
+                # consider "walk_in" and "walk_out" as "SIL"
+                if v=="walk_in" or v=="walk_out":
+                    v='SIL'
+                labels_list.append(BF_ACTION_CLASS.index(v))
+                continue      
+            else:
+                if clip_num == 2:
+                    s_list = [int(a), int(b)-15]
+                else:
+                    # random choice is redundant when save the train data offline
+                    s_list = random.sample((range(int(a)+15, int(b)-15, 15)), int(clip_num-2))
+                    s_list.extend([int(a), int(b)-15])
+                for s in sorted(s_list):
+                    temp_data = np.empty((BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32')) 
+                    # For some reasons, the number of video frame is less than the max length of video in notation. 
+                    if s+15 > len(frames):
+                        for i, j in enumerate(range(len(frames)-8, len(frames))):
+                            temp_frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+                            temp_data[i] = temp_frame
+                    else:
                         for i, j in enumerate(range(s, s+15, 2)):
-                            frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
-                            temp_data[i] = frame
-                        # temp_label[BF_ACTION_CLASS.index(v)] = 1
-                        if v=="walk_in" or v=="walk_out":
-                            v='SIL'
-                        temp_label = BF_ACTION_CLASS.index(v) 
-                    elif s+8 <= int(b):
-                        if s+8 > len(frames):
-                            break
-                        flag = True
-                        for i, j in enumerate(range(int(s), int(s)+8)):
-                            frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
-                            temp_data[i] = frame
-                        # temp_label[BF_ACTION_CLASS.index(v)] = 1
-                        if v=="walk_in" or v=="walk_out":
-                            v='SIL'
-                        temp_label = BF_ACTION_CLASS.index(v)
-                    if flag:
-                        buffer_list.append(temp_data)
-                        labels_list.append(temp_label)
-            except Exception as e:
-                import ipdb; ipdb.set_trace()
-                print(e)
+                            temp_frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+                            temp_data[i] = temp_frame
+                    buffer_list.append(temp_data)
+                    # consider "walk_in" and "walk_out" as "SIL"
+                    if v=="walk_in" or v=="walk_out":
+                        v='SIL'
+                    labels_list.append(BF_ACTION_CLASS.index(v))
+
         buffer = np.array(buffer_list)
         labels = np.array(labels_list)
         return buffer, labels
@@ -459,7 +452,7 @@ def collate_fn_without_backbone(batch):
             batch_anti_clips = torch.cat((batch_anti_clips, data[3]))
         batch_anti_labels = torch.cat((batch_anti_labels, data[4]))
         batch_anti_pad_num = np.concatenate((batch_anti_pad_num, data[5]))
-        # batch_img_dir.append(data[6])
+        batch_img_dir.append(data[6])
 
     return batch_obs_clips, batch_obs_labels, batch_obs_pad_num, \
            batch_anti_clips, batch_anti_labels, batch_anti_pad_num, \
@@ -507,4 +500,69 @@ if __name__ == "__main__":
     #                 f5_label = v
     #         labels[i][BF_ACTION_CLASS.index(f5_label if f4_label == f5_label else f4_label)] = 1
     #         buffer[i] = temp
+    #     return buffer, labels
+
+
+    # def _sample(self, data_dir, frames, sample_ratio=1):
+    #     labels_list = []
+    #     buffer_list = []
+    #     # sample the frames within each segment
+    #     for k, v in sorted(self.notation_info[data_dir].items(), key=lambda a: int(a[0].split('-')[0])):
+    #         # temp_label = np.zeros(len(BF_ACTION_CLASS), np.dtype('float32'))
+    #         a, b= k.split('-')
+    #         # skip the extremely short segments
+    #         if a==b or (int(b)-int(a)<8):
+    #             continue
+    #         # clip_num = (int(b)-int(a))*sample_ratio // 15 if (int(b)-int(a))*sample_ratio // 15 else 1
+    #         clip_num = round((int(b)-int(a))*sample_ratio / 15)
+    #         try:
+    #             for s in sorted(random.sample((range(int(a), int(b), 15)), int(clip_num))):
+    #                 temp_data = np.empty((self.sample_num, BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
+    #                 # to ensure each segment have at least one clip
+    #                 if clip_num == 1:
+    #                     if int(b) > len(frames):
+    #                         break
+    #                     s = int(a) if int(b)-8==int(a) else random.choice(range(int(a), int(b)-8))
+    #                     for i, j in enumerate(range(s, s+8)):
+    #                         frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+    #                         temp_data[i] = frame   
+    #                     # temp_label[BF_ACTION_CLASS.index(v)] = 1 
+    #                     # labels_list.append(temp_label)
+    #                     buffer_list.append(temp_data)
+    #                     if v=="walk_in" or v=="walk_out":
+    #                         v='SIL'
+    #                     labels_list.append(BF_ACTION_CLASS.index(v))
+    #                     break   
+    #                 # set "flag" to avoid the empty temp_data                 
+    #                 flag = False
+    #                 if s+15 <= int(b):
+    #                     if s+15 > len(frames):
+    #                         break
+    #                     flag = True
+    #                     for i, j in enumerate(range(s, s+15, 2)):
+    #                         frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+    #                         temp_data[i] = frame
+    #                     # temp_label[BF_ACTION_CLASS.index(v)] = 1
+    #                     if v=="walk_in" or v=="walk_out":
+    #                         v='SIL'
+    #                     temp_label = BF_ACTION_CLASS.index(v) 
+    #                 elif s+8 <= int(b):
+    #                     if s+8 > len(frames):
+    #                         break
+    #                     flag = True
+    #                     for i, j in enumerate(range(int(s), int(s)+8)):
+    #                         frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
+    #                         temp_data[i] = frame
+    #                     # temp_label[BF_ACTION_CLASS.index(v)] = 1
+    #                     if v=="walk_in" or v=="walk_out":
+    #                         v='SIL'
+    #                     temp_label = BF_ACTION_CLASS.index(v)
+    #                 if flag:
+    #                     buffer_list.append(temp_data)
+    #                     labels_list.append(temp_label)
+    #         except Exception as e:
+    #             import ipdb; ipdb.set_trace()
+    #             print(e)
+    #     buffer = np.array(buffer_list)
+    #     labels = np.array(labels_list)
     #     return buffer, labels

@@ -146,6 +146,7 @@ def train_model_recog_anti():
                 anti_feat = data[3]
                 anti_labels = data[4]
                 anti_pad_num = data[5]
+                data_dir = data[6]
                 obs_feat, obs_labels, anti_feat, anti_labels = obs_feat.to(device), obs_labels.to(device), anti_feat.to(device), anti_labels.to(device)
                 if phase == 'train':
                     model.train()

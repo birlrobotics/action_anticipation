@@ -30,8 +30,9 @@ class I3D_Head(nn.Module):
     
     def forward(self, x):
         # x = self.avg(x)
+        # import ipdb; ipdb.set_trace()
+        # x = F.normalize(x)
         if self.use_fc:
-            x = x.squeeze()
             x = F.relu(self.fc(x))
             return self.dropout(x)
         else:

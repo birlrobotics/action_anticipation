@@ -1,4 +1,5 @@
 ''' Evaluation script for action recognition and anticipation '''
+''' Adatped from project: https://github.com/yabufarha/anticipating-activities'''
 
 import os
 import copy
@@ -44,11 +45,15 @@ def evaluation():
         test_dataloader = DataLoader(dataset=test_set, batch_size=1, shuffle=False, num_workers=0)
         print(F"Finish preparing testing data for {args.ds} split {args.split_idx}.")
 
-    # set up the model. NOTE: you need to update the 'dataset/config.py' file based on the saving configuration of the checkpoints
+    # load checkpoint
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print("Testing on {}.".format(device))
+    checkpoint = torch.load(args.ck, map_location=device)
+
+    # set up the model. NOTE: you need to update the 'dataset/config.py' file based on the saving configuration of the checkpoints
     model = Anticipation_Without_Backbone(train=False).to(device)
+    model.load_state_dict(checkpoint)
     model.eval()
+    print("Contructed model. Loaded checkpoint. Testing on {}.".format(device))
 
     # Define some variable for saving the results
     pred_prec = BF_CONFIG['pred_perc']
@@ -83,7 +88,7 @@ def evaluation():
         
         with torch.no_grad():
             recog_logits, anti_logits, *attn = model(obs_feat, time_seq, obs_pad_num, anti_pad_num)
-            import ipdb; ipdb.set_trace()
+            # import ipdb; ipdb.set_trace()
             recog_scores, anti_scores = torch.nn.Softmax(-1)(recog_logits), torch.nn.Softmax(-1)(anti_logits)
             top_recog_probs, top_recog_class = recog_scores.topk(1, dim=-1)
             top_anti_probs, top_anti_class = anti_scores.topk(1, dim=-1)
@@ -179,6 +184,6 @@ def create_backbone_feat():
 if __name__ == "__main__":
     args = arg_parse()
     gt_info = io.loads_json(os.path.join(BF_CONFIG['data_dir'], "notation.json"))
-    if args.ow_feat or not os.path.exists(os.path.join("dataset", args.ds, f"i3d_feat_eval_split_{args.split_idx}.hdf5")):
+    if args.ow_feat or not os.path.exists(os.path.join("dataset", args.ds, f"i3d_feat_eval_split_{args.split_idx}_{args.mode}.hdf5")):
         create_backbone_feat()
     evaluation()
