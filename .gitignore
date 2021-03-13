@@ -3,4 +3,7 @@ utils/__pycache__/*
 utils/data_analyse.py
 scp_file.sh
 log/*
-result
+
+!/result
+/result/*
+!/result/*.py

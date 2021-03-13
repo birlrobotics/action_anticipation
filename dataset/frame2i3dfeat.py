@@ -48,10 +48,13 @@ def sample(data_dir, frames, sample_ratio=1):
         # clip_num = (int(b)-int(a))*sample_ratio // 15 if (int(b)-int(a))*sample_ratio // 15 else 1
         clip_num = round((int(b)-int(a))*sample_ratio / 15)
         if clip_num == 1:
-            if int(b) > len(frames):
+            if int(b) > len(frames) and len(frames)-8 < int(a):
                 continue
             temp_data = np.empty((BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
-            s = int(a) if int(b)-8==int(a) else random.choice(range(int(a), int(b)-8))
+            if not (int(b) > len(frames)):
+                s = int(a) if int(b)-8==int(a) else random.choice(range(int(a), int(b)-8))
+            else:
+                s = int(a) if len(frames)-8==int(a) else random.choice(range(int(a), len(frames)-8))
             for i, j in enumerate(range(s, s+8)):
                 temp_frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
                 temp_data[i] = temp_frame   
@@ -100,6 +103,7 @@ if __name__ == "__main__":
     notation_info = io.loads_json(os.path.join(BF_CONFIG["data_dir"], "notation.json"))
     for data_dir in tqdm.tqdm(list(notation_info.keys())):
         # import ipdb; ipdb.set_trace()
+        # data_dir = './dataset/breakfast/rgb_frame/P51/webcam02/cereals'
         frames = sorted([os.path.join(data_dir, img) for img in os.listdir(data_dir)])
         all_buffer, all_label = sample(data_dir, frames, 1)
         all_buffer = normalize(all_buffer).transpose((0, 4, 1, 2, 3))
@@ -117,6 +121,6 @@ if __name__ == "__main__":
         feat_file_name.create_group(data_dir)
         feat_file_name[data_dir].create_dataset(name='avg_feat', data=feat.cpu().detach().numpy())
         feat_file_name[data_dir].create_dataset(name='label', data=all_label)
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
     
     feat_file_name.close()

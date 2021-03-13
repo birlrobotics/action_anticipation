@@ -135,6 +135,7 @@ def train_model_recog_anti():
             anti_epoch_loss = 0
             recog_sample_num = 0
             anti_sample_num = 0
+            pre_iter_loss = 0
             # count = 0
             for data in tqdm(dataloader[phase]):
                 # import ipdb; ipdb.set_trace()
@@ -175,6 +176,14 @@ def train_model_recog_anti():
                     a_loss = anti_loss.item()/(anti_labels.shape.numel() - anti_pad_num.sum())
                     i_loss = r_loss + a_loss
                     writer.add_scalars('train_iter_loss', {'recog': r_loss, 'anti': a_loss, 'all': i_loss}, train_iter_num)
+                    # to log the data which might be the outliers
+                    if epoch > 50 and (i_loss - pre_iter_loss) > 2:
+                        io.mkdir_if_not_exists('./result', recursive=True)
+                        if pre_iter_loss == 0:
+                            io.write('./result/outlier_data.txt', data_dir, 'w')
+                        else:
+                            io.write('./result/outlier_data.txt', data_dir, 'a')
+                    pre_iter_loss = i_loss
                     train_iter_num += 1
             recog_epoch_loss /= recog_sample_num
             anti_epoch_loss /= anti_sample_num

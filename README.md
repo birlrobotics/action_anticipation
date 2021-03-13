@@ -19,10 +19,17 @@
 - [ ] 在transformer中的attention使用**多尺度attention/local attention**而不是全局attention；
 - [ ] 一开始从I3D得到的特征是否需要通过MLP后作动作识别；
 - [ ] 逆视频输入，加个可学习的正逆特征，像PE特征一样；
-- [ ] 图像先进行高斯滤波
+- [ ] 初始特征增强，加噪声
 
 ### NOTE
 - For simplicity, we sample the training data in each pure action segment, while we construct the evaluation datas with continuous frames.
 
 
-CUDA_VISIBLE_DEVICES=1 python train.py --nw=4 --lr=0.00001 --bs=64 --e_v='L2_dp0.3_lr0.00001_bs64_dfinit_alldata_inputl2norm'
+### Log
+- lr = 0.0001时，训练会明显震荡，检查数据好像没啥问题，改成0.00001会好点；
+- 所有层使用default初始化比xavier_uniform好；
+- input feature先试用L2norm归一化或L2norm，好像也没啥作用；
+- batchsize设小点好像效果更好；
+- 没有Positional embedding效果好差;
+
+CUDA_VISIBLE_DEVICES=1 python train.py --nw=4 --lr=0.00001 --bs=4 --e_v='L2_dp0.3_lr0.00001_bs64_dfinit_alldata_inputl2norm'

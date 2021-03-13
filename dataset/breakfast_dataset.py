@@ -274,10 +274,13 @@ class BreakfastDataset(Dataset):
             # clip_num = (int(b)-int(a))*sample_ratio // 15 if (int(b)-int(a))*sample_ratio // 15 else 1
             clip_num = round((int(b)-int(a))*sample_ratio / 15)
             if clip_num == 1:
-                if int(b) > len(frames):
+                if int(b) > len(frames) and len(frames)-8 < int(a):
                     continue
                 temp_data = np.empty((BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH'], 3), np.dtype('float32'))
-                s = int(a) if int(b)-8==int(a) else random.choice(range(int(a), int(b)-8))
+                if not (int(b) > len(frames)):
+                    s = int(a) if int(b)-8==int(a) else random.choice(range(int(a), int(b)-8))
+                else:
+                    s = int(a) if len(frames)-8==int(a) else random.choice(range(int(a), len(frames)-8))
                 for i, j in enumerate(range(s, s+8)):
                     temp_frame = cv2.imread(frames[j]).astype(np.float32)[:,:,::-1]
                     temp_data[i] = temp_frame   
