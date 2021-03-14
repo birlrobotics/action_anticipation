@@ -23,20 +23,30 @@ class I3D_Head(nn.Module):
     def __init__(self, d_in=1024, drop_prob=0.1, use_fc=True):
         super(I3D_Head, self).__init__()
         self.use_fc = use_fc
-        if use_fc:
+        if use_fc == 1:
             # self.avg = nn.AvgPool3d(kernel_size=(1, 7, 7), stride=1)
             self.fc = nn.Linear(1024, d_in, bias=True)
             self.dropout = nn.Dropout(drop_prob)
             self.layer_norm = nn.LayerNorm(d_in, eps=1e-6)
+        if use_fc == 2:
+            self.fc = nn.Linear(1024, d_in, bias=True)
+            self.dropout = nn.Dropout(drop_prob)
+            self.layer_norm = nn.LayerNorm(d_in, eps=1e-6)
+            self.fc2 = nn.Linear(d_in, d_in, bias=True)
     
     def forward(self, x):
         # x = self.avg(x)
         # import ipdb; ipdb.set_trace()
         # x = F.normalize(x)
-        if self.use_fc:
-            x = self.fc(x)
+        if self.use_fc == 1:
             # x = self.layer_norm(x)
-            x = F.relu(x)
+            x = F.relu(self.fc(x))
+            return self.dropout(x)
+        elif self.use_fc == 2:
+            # x = self.layer_norm(x)
+            x = F.relu(self.fc(x))
+            x = self.dropout(x)
+            x = F.relu(self.fc2(x))
             return self.dropout(x)
         else:
             return x

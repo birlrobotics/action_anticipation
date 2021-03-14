@@ -31,5 +31,6 @@
 - input feature先试用L2norm归一化或L2norm，好像也没啥作用；
 - batchsize设小点好像效果更好；
 - 没有Positional embedding效果好差;
+- I3D features没有经过FC效果会差点,加两层MLP会好点；
 
 CUDA_VISIBLE_DEVICES=1 python train.py --nw=4 --lr=0.00001 --bs=4 --e_v='L2_dp0.3_lr0.00001_bs64_dfinit_alldata_inputl2norm'

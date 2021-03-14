@@ -32,7 +32,7 @@ BF_CONFIG = {
     "cp_dir": "./checkpoints/i3d/rgb_imagenet.pkl",
     "fixed": True,
     # For backbone head
-    "use_fc": True,
+    "use_fc": 2,        # layers: [0, 1, 2]
     # For task head network
     "head_layers": 1, 
     # For training
