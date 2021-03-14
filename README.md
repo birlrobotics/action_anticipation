@@ -26,11 +26,13 @@
 
 
 ### Log
-- lr = 0.0001时，训练会明显震荡，检查数据好像没啥问题，改成0.00001会好点；
-- 所有层使用default初始化比xavier_uniform好；
+- lr = 0.0001时，训练会明显震荡，检查数据好像没啥问题，**改成0.00001会好点**；
+- 所有层使用**default初始化**比xavier_uniform好；
 - input feature先试用L2norm归一化或L2norm，好像也没啥作用；
-- batchsize设小点好像效果更好；
+- **batchsize设小点**好像效果更好；
 - 没有Positional embedding效果好差;
-- I3D features没有经过FC效果会差点,加两层MLP会好点；
+- I3D features没有经过FC效果会差点,**加两层MLP会好点**；
+- dropout in PE效果不好；
+- decoder中PE加offset而不是从0位置计起，效果没提升；
 
 CUDA_VISIBLE_DEVICES=1 python train.py --nw=4 --lr=0.00001 --bs=4 --e_v='L2_dp0.3_lr0.00001_bs64_dfinit_alldata_inputl2norm'

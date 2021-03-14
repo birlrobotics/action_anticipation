@@ -45,7 +45,7 @@ class Transformer(nn.Module):
         trg_mask = get_pad_mask(trg_seq.shape[1], dec_pad_num).to(src_seq.device)
         enc_output, enc_slf_attn_list = self.encoder(src_seq, src_mask, return_attn=self.return_attn)
         if self.use_dec:
-            dec_output, dec_slf_attn_list, dec_enc_attn_list = self.decoder(trg_seq, enc_output, src_mask, trg_mask, return_attn=self.return_attn) 
+            dec_output, dec_slf_attn_list, dec_enc_attn_list = self.decoder(trg_seq, enc_output, src_mask, trg_mask, enc_pad_num, return_attn=self.return_attn) 
             return enc_output, dec_output, enc_slf_attn_list, dec_slf_attn_list, dec_enc_attn_list
         else:
             return enc_output, enc_slf_attn_list
@@ -72,12 +72,14 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, max_len, drop_prob=0.1, pos_enc=True):
         super(Decoder, self).__init__()
-        self.position_enc = PositionalEncoding(d_input=d_input, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
+        self.d_input=d_input; self.max_len=max_len; self.drop_prob=drop_prob; self.pos_enc=pos_enc
+        # self.position_enc = PositionalEncoding(d_input=d_input, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
         self.decoder_stack = nn.ModuleList([DecoderLayer(n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob) for _ in range(n_layers)])
 
-    def forward(self, x, enc_output, src_mask, trg_mask, return_attn=False):
+    def forward(self, x, enc_output, src_mask, trg_mask, enc_pad_num, return_attn=False):
         dec_slf_attn_list, dec_enc_attn_list = [], []
-
+        # import ipdb; ipdb.set_trace()
+        self.position_enc = Dec_PositionalEncoding(d_input=self.d_input, max_len=self.max_len, drop_prob=self.drop_prob, offset=enc_output.shape[-2]-enc_pad_num, pos_enc=self.pos_enc)
         dec_output = self.position_enc(x)
         for dec_layer in self.decoder_stack:
             dec_output, dec_slf_attn, dec_enc_attn = dec_layer(dec_output, enc_output, slf_attn_mask=trg_mask, dec_enc_attn_mask=src_mask)
@@ -105,6 +107,32 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         if self.pos_enc:
             x = x + self.pe[:, :x.size(1), :]
+            # return self.dropout(x)
+            return x
+        else:
+            return x
+
+class Dec_PositionalEncoding(nn.Module):
+    '''https://github.com/pytorch/examples/blob/master/word_language_model/model.py'''
+    def __init__(self, d_input, max_len, drop_prob=0.1, offset=0, pos_enc=True):
+        super(Dec_PositionalEncoding, self).__init__()
+        if pos_enc:
+            pe_all = torch.empty((0, max_len, d_input), dtype=torch.float)
+            for i in offset:
+                pe = torch.zeros(max_len, d_input)
+                position = torch.arange(0+i, max_len+i, dtype=torch.float).unsqueeze(1)
+                div_term = torch.exp(torch.arange(0, d_input, 2).float() * (-math.log(10000.0) / d_input))
+                pe[:, 0::2] = torch.sin(position * div_term) # dim 2i
+                pe[:, 1::2] = torch.cos(position * div_term) # dim 2i+1
+                pe = pe.unsqueeze(0)
+                pe_all = torch.cat((pe_all, pe))
+            self.register_buffer('pe', pe_all)
+            self.dropout = nn.Dropout(drop_prob)
+        self.pos_enc = pos_enc
+
+    def forward(self, x):
+        if self.pos_enc:
+            x = x + self.pe[:, :x.size(1), :].to(x.device)
             # return self.dropout(x)
             return x
         else:
@@ -210,7 +238,6 @@ class FeedForward(nn.Module):
         output = self.dropout1(F.relu(self.fc1(x)))
         output = self.dropout2(self.fc2(output))
         output += x
-        # import ipdb; ipdb.set_trace()
         output = self.layer_norm(output)
 
         return output

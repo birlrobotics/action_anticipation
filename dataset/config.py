@@ -40,6 +40,8 @@ BF_CONFIG = {
     "anti_weight": 1, 
     # For testing
     "pred_perc": [.1, .2, .3, .5], 
+    # For data generation
+    "data_reverse": True,
 }
 
 # 50 actions in total, but action "walk in" and "walk out" are not included in the original paper (48 fine-grained actions)
