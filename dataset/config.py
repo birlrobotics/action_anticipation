@@ -27,6 +27,7 @@ BF_CONFIG = {
     "pos_enc": True,
     "queries_norm_factor": 300.,
     "return_attn": True,
+    "multi_scale_mask": True,
     # For backbone
     "backbone": 'i3d',
     "cp_dir": "./checkpoints/i3d/rgb_imagenet.pkl",

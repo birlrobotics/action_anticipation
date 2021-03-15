@@ -15,7 +15,7 @@ class Anticipation_Without_Backbone(nn.Module):
         self.queries_gen = Decoder_Queries_Gen(in_dim=BF_CONFIG["d_input"], drop_prob=BF_CONFIG["drop_prob"], all_zeros=BF_CONFIG['all_zeros'])
         self.transformer = Transformer(BF_CONFIG["n_layers"], BF_CONFIG["n_attn_head"], BF_CONFIG["d_input"], 
                                        BF_CONFIG["d_inner"], BF_CONFIG["d_qk"], BF_CONFIG["d_v"], BF_CONFIG["drop_prob"], 
-                                       BF_CONFIG["video_len"], use_dec=use_dec, pos_enc=BF_CONFIG["pos_enc"])
+                                       BF_CONFIG["video_len"], use_dec=use_dec, pos_enc=BF_CONFIG["pos_enc"], return_attn=BF_CONFIG["return_attn"], msm=BF_CONFIG["multi_scale_mask"])
         self.enc_head = Encoder_Head(len(BF_ACTION_CLASS), in_dim=BF_CONFIG["d_input"], layers=BF_CONFIG['head_layers'], drop_prob=BF_CONFIG["drop_prob"])
         self.dec_head = Decoder_Head(len(BF_ACTION_CLASS), in_dim=BF_CONFIG["d_input"], layers=BF_CONFIG['head_layers'], drop_prob=BF_CONFIG["drop_prob"])
 

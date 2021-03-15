@@ -26,11 +26,42 @@ def get_sequence_mask(seq_len):
     return subseq_mask == 1
     # return subseq_mask.byte()
 
+def multi_scale_mask(seq_len, h_step_list=[4, 8, 16], h_num_each=2):
+    ms_mask = torch.empty((0, seq_len, seq_len))
+    for step in h_step_list:
+        mask = torch.eye(seq_len)
+        for i in range(seq_len):
+            l_n = int(step / 2); r_n = int(step / 2)
+            if i < seq_len/2:
+                for j in range(l_n):
+                    if i-j-1 >= 0 and l_n:
+                        l_n -= 1
+                        mask[i][i-j-1]=1
+                    else:
+                        break
+                r_n += l_n
+                for j in range(r_n):
+                    mask[i][i+j+1]=1
+            else:
+                for j in range(r_n):
+                    if i+j+1 < seq_len and r_n:
+                        r_n -= 1
+                        mask[i][i+j+1]=1
+                    else:
+                        break
+                l_n += r_n
+                for j in range(l_n):
+                    mask[i][i-j-1]=1
+        mask = mask[None,:,:].expand((h_num_each, mask.size(0), mask.size(1)))
+        ms_mask = torch.cat((ms_mask, mask))
+    return ms_mask.byte()
 
 class Transformer(nn.Module):
-    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1, max_len=128, pos_enc=True, use_dec=True, return_attn=True):
+    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1, max_len=300, pos_enc=True, use_dec=True, return_attn=True, msm=False):
         super(Transformer, self).__init__()
         
+        self.n_attn_head=n_attn_head
+        self.msm = msm
         self.use_dec = use_dec
         self.return_attn = return_attn
         self.encoder = Encoder(n_layers=n_layers, n_attn_head=n_attn_head, d_input=d_input, 
@@ -38,13 +69,22 @@ class Transformer(nn.Module):
         if use_dec:
             self.decoder = Decoder(n_layers=n_layers, n_attn_head=n_attn_head, d_input=d_input, 
                                d_inner=d_inner, d_qk=d_qk, d_v=d_v, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
+        if msm:
+            self.ms_mask = multi_scale_mask(max_len, h_step_list=[4, 8, 16], h_num_each=2)
 
     def forward(self, src_seq, trg_seq, enc_pad_num, dec_pad_num):
         # TODO: make the mask matrix
         src_mask = None; trg_mask = None
+        # import ipdb; ipdb.set_trace()
         src_mask = get_pad_mask(src_seq.shape[1], enc_pad_num).to(src_seq.device)
         # trg_mask = (get_pad_mask(trg_seq.shape[1], dec_pad_num) & get_sequence_mask(trg_seq.shape[1])).to(src_seq.device)
         trg_mask = get_pad_mask(trg_seq.shape[1], dec_pad_num).to(src_seq.device)
+        src_mask = src_mask.unsqueeze(1); trg_mask = trg_mask.unsqueeze(1)
+        if self.msm:
+            self.ms_mask = self.ms_mask.to(src_seq.device)
+            exp_shape = (src_mask.size(0), self.n_attn_head-self.ms_mask.shape[0], src_mask.size(-1), src_mask.size(-1))
+            src_mask = torch.cat((self.ms_mask & src_mask, src_mask.expand(exp_shape)), dim=1)
+            trg_mask = torch.cat((self.ms_mask & trg_mask, trg_mask.expand(exp_shape)), dim=1)
         enc_output, enc_slf_attn_list = self.encoder(src_seq, src_mask, return_attn=self.return_attn)
         if self.use_dec:
             dec_output, dec_slf_attn_list, dec_enc_attn_list = self.decoder(trg_seq, enc_output, src_mask, trg_mask, enc_pad_num, return_attn=self.return_attn) 
@@ -168,8 +208,8 @@ class MultiHeadAttention(nn.Module):
         # transpose for attention dot product: --> (b_size, n, seq_len, d) 
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
         # for head axis broadcasting
-        if mask is not None:
-            mask = mask.unsqueeze(1)
+        # if mask is not None:
+        #     mask = mask.unsqueeze(1)
 
         output, attn = self.attention(q, k, v, mask)
         output = output.transpose(1, 2).contiguous().view(sz_b, len_q, -1)
@@ -187,7 +227,6 @@ class ScaledDotProductAttention(nn.Module):
         self.dropout = nn.Dropout(attn_drop_prob)
 
     def forward(self, q, k, v, mask=None):
-        # import ipdb; ipdb.set_trace()
         attn_scores = torch.matmul(q / self.temperature, k.transpose(2,3))
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, -1e9)
@@ -222,5 +261,6 @@ def _get_activation_fn(activation):
         return F.relu
     elif activation == "gelu":
         return F.gelu
-
-    raise RuntimeError("activation should be relu/gelu, not {}".format(activation))
+    elif activation == "leaky_relu":
+        return F.leaky_relu
+    raise RuntimeError("activation should be relu/gelu/prelu, not {}".format(activation))
