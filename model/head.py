@@ -36,7 +36,6 @@ class I3D_Head(nn.Module):
     
     def forward(self, x):
         # x = self.avg(x)
-        # import ipdb; ipdb.set_trace()
         # x = F.normalize(x)
         if self.use_fc == 1:
             # x = self.layer_norm(x)
@@ -96,13 +95,18 @@ class Decoder_Head(nn.Module):
         return logits
 
 class Decoder_Queries_Gen(nn.Module):
-    def __init__(self, in_dim=1024, drop_prob=0.1):
+    def __init__(self, in_dim=1024, drop_prob=0.1, all_zeros=False):
         super(Decoder_Queries_Gen, self).__init__()
-        self.fc = nn.Linear(1, in_dim)
-        self.dropout = nn.Dropout(drop_prob)
+        self.all_zeros = all_zeros
+        if not all_zeros:
+            self.fc = nn.Linear(1, in_dim)
+            self.dropout = nn.Dropout(drop_prob)
 
     def forward(self, bs, x):
-        x = x.expand(bs, x.shape[1])[:,:,None]
-        output = F.relu(self.fc(x))
-
-        return self.dropout(output)
+        # import ipdb; ipdb.set_trace()
+        if not self.all_zeros:
+            x = x.expand(bs, x.shape[1])[:,:,None]
+            output = F.relu(self.fc(x))
+            return self.dropout(output)
+        else:
+            return x

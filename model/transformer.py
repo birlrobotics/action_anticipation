@@ -19,10 +19,12 @@ def get_pad_mask(seq_len, pad_num):
             temp[-i:] = 0
         pad_mask = torch.cat((pad_mask, temp[None,:])) if isinstance(pad_mask, torch.Tensor) else temp[None,:]
     return pad_mask.unsqueeze(1) == 1
+    # return pad_mask.unsqueeze(1).byte()
 
 def get_sequence_mask(seq_len):
     subseq_mask = (1 - torch.triu(torch.ones((1, seq_len, seq_len)), diagonal=1))
     return subseq_mask == 1
+    # return subseq_mask.byte()
 
 
 class Transformer(nn.Module):
@@ -72,14 +74,12 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, max_len, drop_prob=0.1, pos_enc=True):
         super(Decoder, self).__init__()
-        self.d_input=d_input; self.max_len=max_len; self.drop_prob=drop_prob; self.pos_enc=pos_enc
-        # self.position_enc = PositionalEncoding(d_input=d_input, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
+        self.position_enc = PositionalEncoding(d_input=d_input, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
         self.decoder_stack = nn.ModuleList([DecoderLayer(n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob) for _ in range(n_layers)])
 
     def forward(self, x, enc_output, src_mask, trg_mask, enc_pad_num, return_attn=False):
         dec_slf_attn_list, dec_enc_attn_list = [], []
-        # import ipdb; ipdb.set_trace()
-        self.position_enc = Dec_PositionalEncoding(d_input=self.d_input, max_len=self.max_len, drop_prob=self.drop_prob, offset=enc_output.shape[-2]-enc_pad_num, pos_enc=self.pos_enc)
+
         dec_output = self.position_enc(x)
         for dec_layer in self.decoder_stack:
             dec_output, dec_slf_attn, dec_enc_attn = dec_layer(dec_output, enc_output, slf_attn_mask=trg_mask, dec_enc_attn_mask=src_mask)
@@ -111,33 +111,6 @@ class PositionalEncoding(nn.Module):
             return x
         else:
             return x
-
-class Dec_PositionalEncoding(nn.Module):
-    '''https://github.com/pytorch/examples/blob/master/word_language_model/model.py'''
-    def __init__(self, d_input, max_len, drop_prob=0.1, offset=0, pos_enc=True):
-        super(Dec_PositionalEncoding, self).__init__()
-        if pos_enc:
-            pe_all = torch.empty((0, max_len, d_input), dtype=torch.float)
-            for i in offset:
-                pe = torch.zeros(max_len, d_input)
-                position = torch.arange(0+i, max_len+i, dtype=torch.float).unsqueeze(1)
-                div_term = torch.exp(torch.arange(0, d_input, 2).float() * (-math.log(10000.0) / d_input))
-                pe[:, 0::2] = torch.sin(position * div_term) # dim 2i
-                pe[:, 1::2] = torch.cos(position * div_term) # dim 2i+1
-                pe = pe.unsqueeze(0)
-                pe_all = torch.cat((pe_all, pe))
-            self.register_buffer('pe', pe_all)
-            self.dropout = nn.Dropout(drop_prob)
-        self.pos_enc = pos_enc
-
-    def forward(self, x):
-        if self.pos_enc:
-            x = x + self.pe[:, :x.size(1), :].to(x.device)
-            # return self.dropout(x)
-            return x
-        else:
-            return x
-
 
 class EncoderLayer(nn.Module):
     def __init__(self, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1):
@@ -214,6 +187,7 @@ class ScaledDotProductAttention(nn.Module):
         self.dropout = nn.Dropout(attn_drop_prob)
 
     def forward(self, q, k, v, mask=None):
+        # import ipdb; ipdb.set_trace()
         attn_scores = torch.matmul(q / self.temperature, k.transpose(2,3))
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, -1e9)

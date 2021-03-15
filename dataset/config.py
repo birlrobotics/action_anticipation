@@ -4,7 +4,7 @@ import utils.io as io
 BF_CONFIG = {
     # For data preparation
     "data_dir": "./dataset/breakfast",
-    "test_size": 0.2,                 # For splitting the trainval setting into train ans val
+    "test_size": 0.2,                 # For splitting the trainval setting into train and val
     "FPS": 15,
     "EXTRACT_FREQUENCY": 1,
     "RESIZE_WIDTH": 224,
@@ -35,6 +35,8 @@ BF_CONFIG = {
     "use_fc": 2,        # layers: [0, 1, 2]
     # For task head network
     "head_layers": 1, 
+    # For decoder queries head
+    'all_zeros': True,
     # For training
     "recog_weight": 1,
     "anti_weight": 1, 

@@ -12,7 +12,7 @@ class Anticipation_Without_Backbone(nn.Module):
         super(Anticipation_Without_Backbone, self).__init__()
         self.use_dec = use_dec
         self.i3d_head = I3D_Head(d_in=BF_CONFIG["d_input"], drop_prob=BF_CONFIG["drop_prob"], use_fc=BF_CONFIG['use_fc'])
-        self.queries_gen = Decoder_Queries_Gen(in_dim=BF_CONFIG["d_input"], drop_prob=BF_CONFIG["drop_prob"])
+        self.queries_gen = Decoder_Queries_Gen(in_dim=BF_CONFIG["d_input"], drop_prob=BF_CONFIG["drop_prob"], all_zeros=BF_CONFIG['all_zeros'])
         self.transformer = Transformer(BF_CONFIG["n_layers"], BF_CONFIG["n_attn_head"], BF_CONFIG["d_input"], 
                                        BF_CONFIG["d_inner"], BF_CONFIG["d_qk"], BF_CONFIG["d_v"], BF_CONFIG["drop_prob"], 
                                        BF_CONFIG["video_len"], use_dec=use_dec, pos_enc=BF_CONFIG["pos_enc"])
@@ -26,11 +26,15 @@ class Anticipation_Without_Backbone(nn.Module):
         #         if p.dim() > 1:
         #             nn.init.xavier_uniform_(p)
 
-    def forward(self, obs_feat, queries, enc_pad_num, dec_pad_num):
+    def forward(self, obs_feat, enc_pad_num, dec_pad_num):
         # import ipdb; ipdb.set_trace()
         backbone_feat = self.i3d_head(obs_feat)
         if self.use_dec:
-            queries = self.queries_gen(obs_feat.shape[0], queries)
+            if not BF_CONFIG['all_zeros']:
+                time_seq = torch.arange(1, BF_CONFIG['video_len']+1).float().to(obs_feat.device)[None,:] / BF_CONFIG["queries_norm_factor"]
+            else:
+                time_seq = torch.zeros((obs_feat.shape[0], BF_CONFIG['video_len'], BF_CONFIG["d_input"])).to(obs_feat.device)
+            queries = self.queries_gen(obs_feat.shape[0], time_seq)
             enc_output, dec_output, *attn = self.transformer(backbone_feat, queries, enc_pad_num, dec_pad_num)
             recog_logits = self.enc_head(enc_output)
             antic_logits = self.dec_head(dec_output)

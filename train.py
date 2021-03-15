@@ -113,7 +113,6 @@ def train_model_recog_anti():
     io.mkdir_if_not_exists(os.path.join(args.save_dir, args.ds, args.exp_ver), recursive=True)
     
     # start training
-    time_seq = torch.arange(1, BF_CONFIG['video_len']+1).float().to(device)[None,:] / BF_CONFIG["queries_norm_factor"]
     t1 = time.time()
     train_iter_num = 0
     for epoch in range(args.start_epoch, args.epoch):
@@ -152,7 +151,7 @@ def train_model_recog_anti():
                 if phase == 'train':
                     model.train()
                     model.zero_grad()
-                    recog_logits, anti_logits, *attn = model(obs_feat, time_seq, obs_pad_num, anti_pad_num)
+                    recog_logits, anti_logits, *attn = model(obs_feat, obs_pad_num, anti_pad_num)
                     recog_loss = recog_criterion(recog_logits.reshape(recog_logits.shape[:-1].numel(), recog_logits.shape[-1]), obs_labels.reshape(obs_labels.shape.numel()))
                     anti_loss = anti_criterion(anti_logits.reshape(anti_logits.shape[:-1].numel(), anti_logits.shape[-1]), anti_labels.reshape(anti_labels.shape.numel()))
                     loss = recog_loss * BF_CONFIG["recog_weight"] + anti_loss * BF_CONFIG["anti_weight"]
@@ -161,7 +160,7 @@ def train_model_recog_anti():
                 else:
                     model.eval()
                     with torch.no_grad():
-                        recog_logits, anti_logits, *attn = model(obs_feat, time_seq, obs_pad_num, anti_pad_num)
+                        recog_logits, anti_logits, *attn = model(obs_feat, obs_pad_num, anti_pad_num)
                         recog_loss = recog_criterion(recog_logits.reshape(recog_logits.shape[:-1].numel(), recog_logits.shape[-1]), obs_labels.reshape(obs_labels.shape.numel()))
                         anti_loss = anti_criterion(anti_logits.reshape(anti_logits.shape[:-1].numel(), anti_logits.shape[-1]), anti_labels.reshape(anti_labels.shape.numel()))
                         loss = recog_loss * BF_CONFIG["recog_weight"] + anti_loss * BF_CONFIG["anti_weight"]
