@@ -66,7 +66,7 @@ def train_model_recog_anti():
     # prepare the data
     collate_fn = collate_fn_with_backbone if args.feat_type == "online" else collate_fn_without_backbone
     train_set = BreakfastDataset(mode="train", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False)
-    val_set = BreakfastDataset(mode="val", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False)
+    val_set = BreakfastDataset(mode="val", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False, data_aug=False)
     train_dataloader = DataLoader(dataset=train_set, batch_size=args.bs, shuffle=True, num_workers=args.nw, collate_fn=collate_fn)
     val_dataloader = DataLoader(dataset=val_set, batch_size=args.bs, shuffle=True, num_workers=args.nw, collate_fn=collate_fn)
     dataset = {"train": train_set, "val": val_set}

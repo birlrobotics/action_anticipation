@@ -34,5 +34,6 @@
 - I3D features没有经过FC效果会差点,**加两层MLP会好点**；
 - dropout in PE效果不好；
 - decoder中PE加offset而不是从0位置计起，效果没提升；
+- 4层效果比两层好;
 
 CUDA_VISIBLE_DEVICES=1 python train.py --nw=4 --lr=0.00001 --bs=4 --e_v='L2_dp0.3_lr0.00001_bs64_dfinit_alldata_inputl2norm'

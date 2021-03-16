@@ -30,7 +30,7 @@ class BreakfastDataset(Dataset):
                         so that we can shuffle the data from different videos instead of using the three serial data of a video.
             anti_feat: return the anticipation features or not.  
     '''
-    def __init__(self, mode='train', split_idx=0, task='recog_anti', feat_type='offline', data_type='all', anti_feat=False, preproc=None, over_write=False, evaluation=False):
+    def __init__(self, mode='train', split_idx=0, task='recog_anti', feat_type='offline', data_type='all', anti_feat=False, preproc=None, over_write=False, evaluation=False, data_aug=True):
         super(BreakfastDataset, self).__init__()
         self.video_len = BF_CONFIG['video_len']
         self.sample_num = BF_CONFIG['sample_num_each_clip']
@@ -39,6 +39,7 @@ class BreakfastDataset(Dataset):
         self.anti_feat = anti_feat
         self.feat_type = feat_type
         self.data_type = data_type
+        self.data_aug = data_aug
         # get original notation information
         self.notation_info = io.loads_json(os.path.join(_DatasetPath, "notation.json"))
         if feat_type == "offline":
@@ -115,6 +116,16 @@ class BreakfastDataset(Dataset):
                 obs_clips = self._normalize(obs_clips).transpose((0, 1, 5, 2, 3, 4))
             if self.anti_feat and self.feat_type=="online":
                 anti_clips = self._normalize(anti_clips).transpose((0, 1, 5, 2, 3, 4))
+            # add noise
+            if list(BF_CONFIG['data_noise'].keys())[0] and self.data_aug and np.random.rand() >= 0.5:
+                noise_type = list(BF_CONFIG['data_noise'].keys())[0]
+                np.random.seed()
+                if noise_type == 'uniform':
+                    # import ipdb; ipdb.set_trace()
+                    noise = np.random.uniform(BF_CONFIG['data_noise'][noise_type][0], BF_CONFIG['data_noise'][noise_type][1], obs_clips.shape) 
+                elif noise_type == 'normal':
+                    noise = np.random.normal(BF_CONFIG['data_noise'][noise_type][0], BF_CONFIG['data_noise'][noise_type][1], obs_clips.shape)
+                obs_clips = np.maximum((obs_clips + noise).astype(np.float32), 0)
             return torch.from_numpy(obs_clips), torch.from_numpy(obs_labels), obs_pad_num, \
                    torch.from_numpy(anti_clips), torch.from_numpy(anti_labels), anti_pad_num, \
                    data_dir
@@ -411,7 +422,6 @@ def collate_fn_with_backbone(batch):
     '''
         Default collate_fn(): https://github.com/pytorch/pytorch/blob/1d53d0756668ce641e4f109200d9c65b003d05fa/torch/utils/data/_utils/collate.py#L43
     '''
-    # import ipdb; ipdb.set_trace()
     batch_obs_clips = torch.empty((0, BF_CONFIG['video_len'], 3, BF_CONFIG['sample_num_each_clip'], BF_CONFIG['RESIZE_HEIGHT'], BF_CONFIG['RESIZE_WIDTH']), dtype=torch.float)
     batch_obs_labels = torch.empty((0, BF_CONFIG['video_len']), dtype=torch.int64)
     batch_obs_pad_num = np.empty((0))
@@ -438,7 +448,6 @@ def collate_fn_without_backbone(batch):
     '''
         Default collate_fn(): https://github.com/pytorch/pytorch/blob/1d53d0756668ce641e4f109200d9c65b003d05fa/torch/utils/data/_utils/collate.py#L43
     '''
-    # import ipdb; ipdb.set_trace()
     batch_obs_clips = torch.empty((0, BF_CONFIG['video_len'], 1024), dtype=torch.float)
     batch_obs_labels = torch.empty((0, BF_CONFIG['video_len']), dtype=torch.int64)
     batch_obs_pad_num = np.empty((0))

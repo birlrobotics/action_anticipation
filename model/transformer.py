@@ -231,7 +231,6 @@ class ScaledDotProductAttention(nn.Module):
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, -1e9)
                 
-        
         attn_probs = self.dropout(F.softmax(attn_scores, dim=-1))
         output = torch.matmul(attn_probs, v)
 
@@ -264,3 +263,17 @@ def _get_activation_fn(activation):
     elif activation == "leaky_relu":
         return F.leaky_relu
     raise RuntimeError("activation should be relu/gelu/prelu, not {}".format(activation))
+
+# def get_activation(name):
+#     if name=='ReLU':
+#         return nn.ReLU(inplace=True)
+#     elif name=='Tanh':
+#         return nn.Tanh()
+#     elif name=='Identity':
+#         return Identity()
+#     elif name=='Sigmoid':
+#         return nn.Sigmoid()
+#     elif name=='LeakyReLU':
+#         return nn.LeakyReLU(0.2,inplace=True)
+#     else:
+#         assert(False), 'Not Implemented'

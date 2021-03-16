@@ -27,7 +27,7 @@ BF_CONFIG = {
     "pos_enc": True,
     "queries_norm_factor": 300.,
     "return_attn": True,
-    "multi_scale_mask": True,
+    "multi_scale_mask": False,
     # For backbone
     "backbone": 'i3d',
     "cp_dir": "./checkpoints/i3d/rgb_imagenet.pkl",
@@ -45,6 +45,7 @@ BF_CONFIG = {
     "pred_perc": [.1, .2, .3, .5], 
     # For data generation
     "data_reverse": True,
+    "data_noise": {'uniform': [-0.5, 0.5]},     #[{None: 0}, {'uniform': [-0.5, 0.5]}, {'normal': [0, 0.2]}]
 }
 
 # 50 actions in total, but action "walk in" and "walk out" are not included in the original paper (48 fine-grained actions)

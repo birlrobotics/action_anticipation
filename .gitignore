@@ -7,3 +7,6 @@ log/*
 !/result
 /result/*
 !/result/*.py
+
+checkpoints
+./dataset/breakfast
