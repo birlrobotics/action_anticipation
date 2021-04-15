@@ -156,7 +156,7 @@ if __name__ == "__main__":
         # all_video_len = io.loads_json(args.out_dir.replace('rgb_frame/' ,"all_video_len.json"))
         plot_all_video_len(sorted(all_video_len))    
     else:
-        # WARNING: It will take much space to use h5py to save the raw date
+        # WARNING: It will take much disk space to use h5py to save the raw date
         breakfast_raw_img = h5py.File(os.path.join(args.out_dir, 'raw_img_data.hdf5'), 'w')
         all_video_len = []
         for i in video_list:

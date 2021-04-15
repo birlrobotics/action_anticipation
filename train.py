@@ -1,10 +1,10 @@
-import os 
+import os
 import time
-from tqdm import tqdm 
+from tqdm import tqdm
 
-import torch 
-import torchvision 
-from torch import nn, optim 
+import torch
+import torchvision
+from torch import nn, optim
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 
@@ -13,7 +13,7 @@ from model.main import Anticipation_With_Backbone, Anticipation_Without_Backbone
 from dataset.breakfast_dataset import BreakfastDataset, collate_fn_with_backbone, collate_fn_without_backbone
 import utils.io as io
 
-import argparse 
+import argparse
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '1' 
 
@@ -65,13 +65,13 @@ def arg_parse():
 def train_model_recog_anti():
     # prepare the data
     collate_fn = collate_fn_with_backbone if args.feat_type == "online" else collate_fn_without_backbone
-    train_set = BreakfastDataset(mode="train", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False)
+    train_set = BreakfastDataset(mode="trainval", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False)
     val_set = BreakfastDataset(mode="val", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False, data_aug=False)
     train_dataloader = DataLoader(dataset=train_set, batch_size=args.bs, shuffle=True, num_workers=args.nw, collate_fn=collate_fn)
     val_dataloader = DataLoader(dataset=val_set, batch_size=args.bs, shuffle=True, num_workers=args.nw, collate_fn=collate_fn)
     dataset = {"train": train_set, "val": val_set}
     dataloader = {"train": train_dataloader, "val": val_dataloader}
-    phase_list = ["train", 'val']
+    phase_list = ["train"]
     print("Preparing data done!!!")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

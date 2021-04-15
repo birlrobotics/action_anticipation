@@ -37,7 +37,7 @@ BF_CONFIG = {
     # For task head network
     "head_layers": 1, 
     # For decoder queries head
-    'all_zeros': True,
+    'all_zeros': False,
     # For training
     "recog_weight": 1,
     "anti_weight": 1, 
@@ -45,7 +45,7 @@ BF_CONFIG = {
     "pred_perc": [.1, .2, .3, .5], 
     # For data generation
     "data_reverse": True,
-    "data_noise": {'uniform': [-0.5, 0.5]},     #[{None: 0}, {'uniform': [-0.5, 0.5]}, {'normal': [0, 0.2]}]
+    "data_noise": {'normal': [0, 1]},     #[{None: 0}, {'uniform': [-0.5, 0.5]}, {'normal': [0, 0.3]}]
 }
 
 # 50 actions in total, but action "walk in" and "walk out" are not included in the original paper (48 fine-grained actions)
@@ -53,3 +53,9 @@ BF_ACTION_CLASS = [i.rstrip() for i in io.read('./dataset/breakfast/action_class
 # consider "walk_in" and "walk_out" as SIL
 BF_ACTION_CLASS.remove("walk_out")
 BF_ACTION_CLASS.remove("walk_in")
+BF_ACTION_COLOR = {}
+color_list = [(r, g, b) for r in range(50,250,50) for g in range(50,250,50) for b in range(100,250,50)]
+for i, action in enumerate(BF_ACTION_CLASS):
+    BF_ACTION_COLOR[action] = color_list[i]
+BF_ACTION_COLOR['walk_out'] = BF_ACTION_COLOR['SIL']
+BF_ACTION_COLOR['walk_in'] = BF_ACTION_COLOR['SIL']

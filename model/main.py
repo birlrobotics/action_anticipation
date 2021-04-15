@@ -58,14 +58,6 @@ class Anticipation_With_Backbone(nn.Module):
         self.enc_head = Encoder_Head(len(BF_ACTION_CLASS), in_dim=BF_CONFIG["d_input"], layers=BF_CONFIG['head_layers'], drop_prob=BF_CONFIG["drop_prob"])
         self.dec_head = Decoder_Head(len(BF_ACTION_CLASS), in_dim=BF_CONFIG["d_input"], layers=BF_CONFIG['head_layers'], drop_prob=BF_CONFIG["drop_prob"])
 
-        # # initialization
-        # if train:
-        #     for p in self.named_parameters():
-        #         if "backbone" in p[0]:
-        #             continue
-        #         if p[1].dim() > 1:
-        #             nn.init.xavier_uniform_(p[1])
-
     def forward(self, obs_feat, queries, enc_pad_num, dec_pad_num):
         backbone_feat = None
         for i in range(obs_feat.shape[0]):

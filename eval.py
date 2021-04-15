@@ -36,7 +36,7 @@ def arg_parse():
 def evaluation():
     # create the directory to the result file
     ck_ver, exp_ver, ds_name = args.ck.split('/')[-1], args.ck.split('/')[-2], args.ck.split('/')[-3]
-    save_dir = os.path.join('./result', ds_name, exp_ver, str(args.split_idx), ck_ver)
+    save_dir = os.path.join('./result', ds_name, exp_ver, str(args.split_idx), ck_ver, args.mode)
     io.mkdir_if_not_exists(save_dir, recursive=True)
 
     # prepare data
@@ -50,18 +50,18 @@ def evaluation():
     checkpoint = torch.load(args.ck, map_location=device)
 
     # set up the model. NOTE: you need to update the 'dataset/config.py' file based on the saving configuration of the checkpoints
-    model = Anticipation_Without_Backbone(train=False).to(device)
+    model = Anticipation_Without_Backbone(train=False)
     model.load_state_dict(checkpoint)
+    model.to(device)
     model.eval()
     print("Contructed model. Loaded checkpoint. Testing on {}.".format(device))
 
     # Define some variable for saving the results
-    pred_prec = BF_CONFIG['pred_perc']
     n_T_anti = {}
     n_T_recog = {}
     for i in BF_CONFIG['eval_obs_perc']:
         temp = {}
-        for j in pred_prec:
+        for j in BF_CONFIG['pred_perc']:
             temp[str(j)] = np.zeros(len(BF_ACTION_CLASS))
         n_T_anti[str(i)] = temp
     for i in BF_CONFIG['eval_obs_perc']:
@@ -71,13 +71,11 @@ def evaluation():
     raw_res = {} 
 
     # For evaluation
-    time_seq = torch.arange(1, BF_CONFIG['video_len']+1).float().to(device)[None,:] / BF_CONFIG["queries_norm_factor"]
     for data in tqdm(test_dataloader):
-        obs_feat = data[0][0]
+        obs_feat = data[0][0].to(device)
         obs_pad_num = data[1][0]
         anti_pad_num = data[2][0]
         data_dir = data[3][0]
-        obs_feat = obs_feat.to(device)
         
         raw_res[data_dir] = {}
         gt_labels_list = []
@@ -87,7 +85,7 @@ def evaluation():
             gt_labels_list.extend([BF_ACTION_CLASS.index(v)]*int(int(k.split('-')[1])-int(k.split('-')[0])+1))
         
         with torch.no_grad():
-            recog_logits, anti_logits, *attn = model(obs_feat, time_seq, obs_pad_num, anti_pad_num)
+            recog_logits, anti_logits, *attn = model(obs_feat, obs_pad_num, anti_pad_num)
             # import ipdb; ipdb.set_trace()
             recog_scores, anti_scores = torch.nn.Softmax(-1)(recog_logits), torch.nn.Softmax(-1)(anti_logits)
             top_recog_probs, top_recog_class = recog_scores.topk(1, dim=-1)
@@ -104,8 +102,8 @@ def evaluation():
                 # For anticipation
                 s_idx = recog_res.shape[0] 
                 anti_res = top_anti_class[i][:int(obs_feat.shape[1]-anti_pad_num[i])].squeeze().cpu()
-                for p in pred_prec:
-                    # the default anticipation percent we set is 50%
+                for p in BF_CONFIG['pred_perc']:
+                    # the default anticipation percent is set to 50%
                     anti_len = round(p / 0.5 * anti_res.shape[0])
                     for k in range(anti_len):
                         for z in range((k+s_idx)*15, (k+s_idx+1)*15):
@@ -127,7 +125,8 @@ def evaluation():
             f.write('{: <20}{: <20}{: <10} \n'.format('ACTION', 'n_T / n_F', 'Acc.'))
             for i in range(len(BF_ACTION_CLASS)):
                 acc = round(n_T_recog[str(p)][i] / (n_T_recog[str(p)][i]+n_F_recog[str(p)][i]) if n_T_recog[str(p)][i]+n_F_recog[str(p)][i] else 0.0, 4)
-                recog_acc_list.append(acc)
+                if n_T_recog[str(p)][i] + n_F_recog[str(p)][i] !=0:
+                    recog_acc_list.append(acc)
                 f.write('{: <20}{: <20}{: <10} \n'.format(BF_ACTION_CLASS[i], \
                                                           str(n_T_recog[str(p)][i])+' / '+str(n_F_recog[str(p)][i]), \
                                                           acc))
@@ -142,7 +141,8 @@ def evaluation():
                 f.write('{: <20}{: <20}{: <10} \n'.format('ACTION', 'n_T / n_F', 'Acc.'))
                 for i in range(len(BF_ACTION_CLASS)):
                     acc = round(n_T_anti[str(p)][k][i] / (n_T_anti[str(p)][k][i]+n_F_anti[str(p)][k][i]) if (n_T_anti[str(p)][k][i]+n_F_anti[str(p)][k][i]) else 0.0, 4)
-                    anti_acc_list.append(acc)
+                    if n_T_anti[str(p)][k][i]+n_F_anti[str(p)][k][i] !=0:
+                        anti_acc_list.append(acc)
                     f.write('{: <20}{: <20}{: <10} \n'.format(BF_ACTION_CLASS[i], \
                                                               str(n_T_anti[str(p)][k][i])+' / '+str(n_F_anti[str(p)][k][i]), \
                                                               acc))
@@ -160,19 +160,18 @@ def create_backbone_feat():
     # set up the model. NOTE: you need to update the 'dataset/config.py' file based on the saving configuration of the checkpoints
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print("Testing on {}.".format(device))
-    backbone = Anticipation_With_Backbone(train=False).backbone.to(device)
+    backbone = Anticipation_With_Backbone(train=False).to(device)
     backbone.eval()
 
     feat_file_name = h5py.File(os.path.join("dataset", args.ds, f"i3d_feat_eval_split_{args.split_idx}_{args.mode}.hdf5"), 'w')
     for data in tqdm(test_dataloader):
-        obs_feat = data[0][0].to(device)
+        obs_feat = data[0][0]
         obs_pad_num = data[1][0]
         anti_pad_num = data[2][0]
         data_dir = data[3][0]
         backbone_feat = None
-        # import ipdb; ipdb.set_trace()
         for i in range(obs_feat.shape[0]):
-            feat = backbone(obs_feat[i])['feat']
+            feat = backbone(obs_feat[i].to(device))['feat']
             feat = feat.squeeze()
             backbone_feat = torch.cat((backbone_feat, feat[None, :])) if backbone_feat is not None else feat[None, :]
         feat_file_name.create_group(data_dir)

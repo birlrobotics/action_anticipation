@@ -16,10 +16,11 @@
 - [x] Transformer
 - [ ] 对子动作segment的长度回归可能**采用范围值而非确定值（或学习一个offset）**会好点，因为子动作持续时间是浮动的；
 - [ ] **多尺度未来特征生成**，因为小物体在浅层特征才具有一定分辨率；
-- [ ] 在transformer中的attention使用**多尺度attention/local attention**而不是全局attention；
-- [ ] 一开始从I3D得到的特征是否需要通过MLP后作动作识别；
+- [x] 在transformer中的attention使用**多尺度attention/local attention**而不是全局attention；
+- [x] 一开始从I3D得到的特征是否需要通过MLP后作动作识别；
 - [ ] 逆视频输入，加个可学习的正逆特征，像PE特征一样；
-- [ ] 初始特征增强，加噪声
+- [x] 初始特征增强，加噪声
+- [ ] **我们采用8frames通过I3D得到每clip的特征，但这些特征会不会由于时序太短而无法捕获到时序信息，更多是空间信息；**
 
 ### NOTE
 - For simplicity, we sample the training data in each pure action segment, while we construct the evaluation datas with continuous frames.
@@ -34,6 +35,7 @@
 - I3D features没有经过FC效果会差点,**加两层MLP会好点**；
 - dropout in PE效果不好；
 - decoder中PE加offset而不是从0位置计起，效果没提升；
-- 4层效果比两层好;
+- **4层效果比2层好**,6层与4层相当;
+- 原始特征加noise会好点
 
 CUDA_VISIBLE_DEVICES=1 python train.py --nw=4 --lr=0.00001 --bs=4 --e_v='L2_dp0.3_lr0.00001_bs64_dfinit_alldata_inputl2norm'
