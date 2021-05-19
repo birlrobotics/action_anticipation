@@ -23,10 +23,10 @@ class BreakfastDataset(Dataset):
     '''    
         Dataset class for breakfast:
         Args:
-            mode = ["trainval", "train", "val"]
+            mode = ["trainval", "train", "val", 'test']
             task = ["recog_only", "recog_anti"]
             feat_type = ["online", "offline"]
-            data_type: 'all' means we create all types of data with three obs_prec ([0.2,0.3,0.5]) in one time 
+            data_type: 'all' means we create all types of data with three obs_prec ([0.2, 0.3, 0.5]) in one time 
                         so that we can shuffle the data from different videos instead of using the three serial data of a video.
             anti_feat: return the anticipation features or not.  
     '''
@@ -106,7 +106,7 @@ class BreakfastDataset(Dataset):
             return torch.from_numpy(clips), torch.from_numpy(labels), pad_num
         else:
             if self.data_type == 'all':
-                obs_clips, obs_labels, obs_pad_num, anti_clips, anti_labels, anti_pad_num, data_dir \
+                obs_clips, obs_labels, obs_pad_num, anti_clips, anti_labels, anti_pad_num, data_dir, obs_itval, anti_itval \
                                             = self.all_data[index]
             else:
                 obs_clips, obs_labels, obs_pad_num, anti_clips, anti_labels, anti_pad_num \
@@ -121,14 +121,14 @@ class BreakfastDataset(Dataset):
                 noise_type = list(BF_CONFIG['data_noise'].keys())[0]
                 np.random.seed()
                 if noise_type == 'uniform':
-                    # import ipdb; ipdb.set_trace()
                     noise = np.random.uniform(BF_CONFIG['data_noise'][noise_type][0], BF_CONFIG['data_noise'][noise_type][1], obs_clips.shape) 
                 elif noise_type == 'normal':
                     noise = np.random.normal(BF_CONFIG['data_noise'][noise_type][0], BF_CONFIG['data_noise'][noise_type][1], obs_clips.shape)
                 obs_clips = np.maximum((obs_clips + noise).astype(np.float32), 0)
+            # import ipdb; ipdb.set_trace()
             return torch.from_numpy(obs_clips), torch.from_numpy(obs_labels), obs_pad_num, \
                    torch.from_numpy(anti_clips), torch.from_numpy(anti_labels), anti_pad_num, \
-                   data_dir
+                   data_dir, torch.from_numpy(obs_itval), torch.from_numpy(anti_itval)
 
     def _recog_anti_all_data_gen(self, data_dir_list):
         all_data = []
@@ -138,17 +138,35 @@ class BreakfastDataset(Dataset):
                 all_buffer, all_label = self._sample(data_dir, frames, 1)
             else:
                 all_buffer, all_label = self.data_feat[data_dir]["avg_feat"], self.data_feat[data_dir]["label"]
+                # import ipdb; ipdb.set_trace()
+                all_itval = np.zeros_like(all_label, dtype=np.float32)
+                l_idx, r_idx = 0, 0
+                while(r_idx<=all_label.shape[0]):
+                    if r_idx == all_label.shape[0]:
+                        itval = r_idx - l_idx
+                        all_itval[l_idx:r_idx] = itval
+                        break
+                    if all_label[r_idx] == all_label[l_idx]:
+                        r_idx += 1
+                    else:
+                        itval = r_idx - l_idx
+                        all_itval[l_idx:r_idx] = itval
+                        l_idx = r_idx
+                        r_idx += 1
+
             obs_perc = BF_CONFIG['train_obs_perc']
             obs_buffer_list = []; obs_label_list = []; obs_pad_num_list = []
             anti_buffer_list = []; anti_label_list = []; anti_pad_num_list = []
-            data_dir_list = []
+            data_dir_list = []; obs_itval_list = []; anti_itval_list = []
             for i in obs_perc:
                 obs_content = all_buffer[:int(i*all_buffer.shape[0])]
                 obs_label = all_label[:int(i*all_label.shape[0])]
+                obs_itval = all_itval[:int(i*all_itval.shape[0])]
                 anti_content = np.array([], np.float32)
                 if self.anti_feat:
                     anti_content = all_buffer[int(i*all_buffer.shape[0]):int((0.5+i)*all_buffer.shape[0])]
                 anti_label = all_label[int(i*all_buffer.shape[0]):int((0.5+i)*all_buffer.shape[0])]
+                anti_itval = all_itval[int(i*all_buffer.shape[0]):int((0.5+i)*all_buffer.shape[0])]
                 obs_pad_num = 0; anti_pad_num = 0
                 if obs_content.shape[0] < self.video_len:
                     obs_pad_num = self.video_len - obs_content.shape[0]
@@ -161,6 +179,7 @@ class BreakfastDataset(Dataset):
                     omit_idxs = sorted(random.sample((range(obs_content.shape[0])), int(obs_content.shape[0]-self.video_len)))
                     obs_content = np.delete(obs_content, omit_idxs, axis=0)
                     obs_label = np.delete(obs_label, omit_idxs)
+                    obs_itval = np.delete(obs_itval, omit_idxs)
                 else:
                     pass
                 if anti_label.shape[0] < self.video_len:
@@ -176,13 +195,14 @@ class BreakfastDataset(Dataset):
                     if self.anti_feat:
                         anti_content = np.delete(anti_content, omit_idxs, axis=0)
                     anti_label = np.delete(anti_label, omit_idxs)
+                    anti_itval = np.delete(anti_itval, omit_idxs)
                 else:
                     pass
                 obs_buffer_list.append(obs_content[None, :]); obs_label_list.append(obs_label[None,:]); obs_pad_num_list.append([obs_pad_num])
                 anti_buffer_list.append(anti_content[None, :]); anti_label_list.append(anti_label[None, :]); anti_pad_num_list.append([anti_pad_num])
-                data_dir_list.append(data_dir)
+                data_dir_list.append(data_dir); obs_itval_list.append(obs_itval); anti_itval_list.append(anti_itval)
 
-            for data in zip(obs_buffer_list, obs_label_list, obs_pad_num_list, anti_buffer_list, anti_label_list, anti_pad_num_list, data_dir_list):
+            for data in zip(obs_buffer_list, obs_label_list, obs_pad_num_list, anti_buffer_list, anti_label_list, anti_pad_num_list, data_dir_list, obs_itval_list, anti_itval_list):
                 all_data.append(data)
         
         return all_data 
@@ -455,6 +475,8 @@ def collate_fn_without_backbone(batch):
     batch_anti_labels = torch.empty((0, BF_CONFIG['video_len']), dtype=torch.int64)
     batch_anti_pad_num = np.empty((0))
     batch_img_dir = []
+    batch_obs_itval_gt = torch.empty((0))
+    batch_anti_itval_gt = torch.empty((0))
 
     for data in batch:
         batch_obs_clips = torch.cat((batch_obs_clips, data[0]))
@@ -465,10 +487,12 @@ def collate_fn_without_backbone(batch):
         batch_anti_labels = torch.cat((batch_anti_labels, data[4]))
         batch_anti_pad_num = np.concatenate((batch_anti_pad_num, data[5]))
         batch_img_dir.append(data[6])
+        batch_obs_itval_gt = torch.cat((batch_obs_itval_gt, data[7]))
+        batch_anti_itval_gt = torch.cat((batch_anti_itval_gt, data[8]))
 
     return batch_obs_clips, batch_obs_labels, batch_obs_pad_num, \
            batch_anti_clips, batch_anti_labels, batch_anti_pad_num, \
-           batch_img_dir
+           batch_img_dir, batch_obs_itval_gt, batch_anti_itval_gt
 
 if __name__ == "__main__":
     dataset = BreakfastDataset()

@@ -20,7 +20,7 @@ BF_CONFIG = {
     "n_layers": 2,
     "n_attn_head": 8,
     "d_input": 1024,
-    "d_inner": 2048,
+    "d_inner": 2048,      # For position-wise Feed-Forward network
     "d_qk": 64,
     "d_v": 64,
     "drop_prob": 0.3,
@@ -28,6 +28,7 @@ BF_CONFIG = {
     "queries_norm_factor": 300.,
     "return_attn": True,
     "multi_scale_mask": False,
+    "pre_norm": False,
     # For backbone
     "backbone": 'i3d',
     "cp_dir": "./checkpoints/i3d/rgb_imagenet.pkl",
@@ -37,14 +38,15 @@ BF_CONFIG = {
     # For task head network
     "head_layers": 1, 
     # For decoder queries head
-    'all_zeros': False,
+    'all_zeros': True,
     # For training
-    "recog_weight": 1,
-    "anti_weight": 1, 
+    'lr_factor': 0.5,
+    'warmup_step': 4000,
+    'eps': 0, 
+    "loss_weight": [1, 1, 0, 0],  # weight for action recognition loss, action anticipation loss, time loss for action recognition, time loss for action anticipation  
     # For testing
     "pred_perc": [.1, .2, .3, .5], 
     # For data generation
-    "data_reverse": True,
     "data_noise": {'normal': [0, 1]},     #[{None: 0}, {'uniform': [-0.5, 0.5]}, {'normal': [0, 0.3]}]
 }
 

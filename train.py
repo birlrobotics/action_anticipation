@@ -9,9 +9,10 @@ from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 
 from dataset.config import BF_CONFIG, BF_ACTION_CLASS
-from model.main import Anticipation_With_Backbone, Anticipation_Without_Backbone
+from model.model import Anticipation_With_Backbone, Anticipation_Without_Backbone
 from dataset.breakfast_dataset import BreakfastDataset, collate_fn_with_backbone, collate_fn_without_backbone
 import utils.io as io
+from model.utils import Mulit_Loss, WarmUpOptimizer
 
 import argparse
 
@@ -36,17 +37,19 @@ def arg_parse():
                         help='The dataset you want to train: default=breakfast')
     parser.add_argument('--nw', '--num_workers', type=int, default=0, 
                         help='Number of workers used in dataloading: default=0')
-    parser.add_argument('--bs', '--batch_size', type=int, default=1, 
+    parser.add_argument('--bs', '--batch_size', type=int, default=2, 
                         help='the size of minibatch: default=1')
     parser.add_argument('--optim', type=str, default='adam', 
                         help='which optimizer to be used: default=adam')
-    parser.add_argument('--lr', type=float, default=0.00001, 
+    parser.add_argument('--lr', type=float, default=0.0001, 
                         help='learning rate: default=0.0001')
+    parser.add_argument('--wd', type=float, default=0.0, 
+                        help='weight decay: default=0.0')
     parser.add_argument('--warmup', action="store_true", 
                         help='warmup stratery: action="store_true"')
-    parser.add_argument('--epoch', type=int, default=300, 
-                        help='Number of training epoch: default=100')
-    parser.add_argument('--start_epoch', type=int, default=0,
+    parser.add_argument('--e_epoch', type=int, default=300, 
+                        help='Number of training epoch: default=300')
+    parser.add_argument('--s_epoch', type=int, default=0,
                         help='number of beginning epochs : 0')
     # For logging or saving
     parser.add_argument('--log_dir', type=str, default='./log',
@@ -61,17 +64,16 @@ def arg_parse():
                         help='number of steps for saving the model parameters: 20')
     return parser.parse_args() 
 
-
 def train_model_recog_anti():
     # prepare the data
     collate_fn = collate_fn_with_backbone if args.feat_type == "online" else collate_fn_without_backbone
     train_set = BreakfastDataset(mode="trainval", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False)
-    val_set = BreakfastDataset(mode="val", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False, data_aug=False)
+    val_set = BreakfastDataset(mode="test", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False, data_aug=False)
     train_dataloader = DataLoader(dataset=train_set, batch_size=args.bs, shuffle=True, num_workers=args.nw, collate_fn=collate_fn)
     val_dataloader = DataLoader(dataset=val_set, batch_size=args.bs, shuffle=True, num_workers=args.nw, collate_fn=collate_fn)
     dataset = {"train": train_set, "val": val_set}
     dataloader = {"train": train_dataloader, "val": val_dataloader}
-    phase_list = ["train"]
+    phase_list = ["train", 'val']
     print("Preparing data done!!!")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -94,19 +96,23 @@ def train_model_recog_anti():
         else:
             param_dict[moduler_name] = param[1].numel()
     for k, v in param_dict.items():
-        print(f"{k} Parameters: {v / 1e6} million.")
+        print(f"{k} parameters: {v / 1e6} million.")
     print(f"Parameters in total: {sum(param_dict.values()) / 1e6} million.")
 
     # build optimizer && criterion
     if args.optim == 'sgd':
-        optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, momentum=0.9, weight_decay=0)
+        optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, momentum=0.9, weight_decay=args.wd)
     elif args.optim == 'adam':
-        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=0)
+        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.wd)
     else:
-        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=0, amsgrad=True)
-    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.scheduler_step, gamma=0.1)
-    recog_criterion = nn.CrossEntropyLoss(reduction='sum')    # 'mean' 'sum' 'none'
-    anti_criterion = nn.CrossEntropyLoss(reduction='sum')
+        optimizer = optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.wd)
+    if BF_CONFIG['pre_norm']:
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, min_lr=1e-9, verbose=True)
+    else:
+        optimizer = WarmUpOptimizer(optimizer, BF_CONFIG['d_input'], BF_CONFIG['lr_factor'], BF_CONFIG['warmup_step'])
+        # pass
+    
+    criterion = Mulit_Loss(reduction='sum', eps=BF_CONFIG['eps'])
 
     #set up logger
     writer = SummaryWriter(log_dir=args.log_dir + '/' + args.ds + '/' + args.exp_ver)
@@ -115,18 +121,7 @@ def train_model_recog_anti():
     # start training
     t1 = time.time()
     train_iter_num = 0
-    for epoch in range(args.start_epoch, args.epoch):
-        # warmup strategy
-        if args.warmup:
-            if epoch == 0:
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = args.lr*0.01
-            if epoch == 10:                
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = args.lr*0.1
-            if epoch == 20:                
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = args.lr
+    for epoch in range(args.s_epoch, args.e_epoch):
         loss_list = []
         for phase in phase_list:
             s_t = time.time()
@@ -135,9 +130,9 @@ def train_model_recog_anti():
             recog_sample_num = 0
             anti_sample_num = 0
             pre_iter_loss = 0
-            # count = 0
+            all_epoch_loss = 0
+            count = 0
             for data in tqdm(dataloader[phase]):
-                # import ipdb; ipdb.set_trace()
                 # count += 1; 
                 # if count > 10: break
                 obs_feat = data[0]
@@ -147,26 +142,28 @@ def train_model_recog_anti():
                 anti_labels = data[4]
                 anti_pad_num = data[5]
                 data_dir = data[6]
-                obs_feat, obs_labels, anti_feat, anti_labels = obs_feat.to(device), obs_labels.to(device), anti_feat.to(device), anti_labels.to(device)
+                obs_itval_gt = data[7]
+                anti_itval_gt = data[8]
+                obs_feat, obs_labels, anti_feat, anti_labels, obs_itval_gt, anti_itval_gt = obs_feat.to(device), obs_labels.to(device), anti_feat.to(device), anti_labels.to(device), obs_itval_gt.to(device), anti_itval_gt.to(device)
                 if phase == 'train':
                     model.train()
                     model.zero_grad()
-                    recog_logits, anti_logits, *attn = model(obs_feat, obs_pad_num, anti_pad_num)
-                    recog_loss = recog_criterion(recog_logits.reshape(recog_logits.shape[:-1].numel(), recog_logits.shape[-1]), obs_labels.reshape(obs_labels.shape.numel()))
-                    anti_loss = anti_criterion(anti_logits.reshape(anti_logits.shape[:-1].numel(), anti_logits.shape[-1]), anti_labels.reshape(anti_labels.shape.numel()))
-                    loss = recog_loss * BF_CONFIG["recog_weight"] + anti_loss * BF_CONFIG["anti_weight"]
+                    recog_logits, anti_logits, recog_itval, anti_itval, *attn = model(obs_feat, obs_pad_num, anti_pad_num)
+                    recog_loss, anti_loss, recog_t_loss, anti_t_loss = criterion(recog_logits, anti_logits, recog_itval, anti_itval, obs_labels, anti_labels, obs_itval_gt, anti_itval_gt)
+                    loss = recog_loss * BF_CONFIG["loss_weight"][0] + anti_loss * BF_CONFIG["loss_weight"][1] + recog_t_loss * BF_CONFIG["loss_weight"][2] + anti_t_loss * BF_CONFIG["loss_weight"][3]
                     loss.backward()
+                    # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                     optimizer.step()
                 else:
                     model.eval()
                     with torch.no_grad():
-                        recog_logits, anti_logits, *attn = model(obs_feat, obs_pad_num, anti_pad_num)
-                        recog_loss = recog_criterion(recog_logits.reshape(recog_logits.shape[:-1].numel(), recog_logits.shape[-1]), obs_labels.reshape(obs_labels.shape.numel()))
-                        anti_loss = anti_criterion(anti_logits.reshape(anti_logits.shape[:-1].numel(), anti_logits.shape[-1]), anti_labels.reshape(anti_labels.shape.numel()))
-                        loss = recog_loss * BF_CONFIG["recog_weight"] + anti_loss * BF_CONFIG["anti_weight"]
+                        recog_logits, anti_logits, recog_itval, anti_itval, *attn = model(obs_feat, obs_pad_num, anti_pad_num)
+                        recog_loss, anti_loss, recog_t_loss, anti_t_loss = criterion(recog_logits, anti_logits, recog_itval, anti_itval, obs_labels, anti_labels, obs_itval_gt, anti_itval_gt)
+                        loss = recog_loss * BF_CONFIG["loss_weight"][0] + anti_loss * BF_CONFIG["loss_weight"][1] + recog_t_loss * BF_CONFIG["loss_weight"][2] + anti_t_loss * BF_CONFIG["loss_weight"][3]
                 # epoch_loss += loss.item() * (labels.shape.numel() - pad_num.sum()).float()
                 recog_epoch_loss += recog_loss.item()
                 anti_epoch_loss += anti_loss.item()
+                all_epoch_loss += loss.item()
                 recog_sample_num += (obs_labels.shape.numel() - obs_pad_num.sum())
                 anti_sample_num += (anti_labels.shape.numel() - anti_pad_num.sum())
                 # plot training loss iteration by tieration
@@ -188,15 +185,17 @@ def train_model_recog_anti():
             anti_epoch_loss /= anti_sample_num
             loss_list.append([recog_epoch_loss, anti_epoch_loss])
             # print loss
-            if epoch == 0 or (epoch % args.print_every) == 9:
+            if epoch == 0 or (epoch % args.print_every) == args.print_every-1:
                 e_t = time.time()
-                print(f"Phase:[{phase}] Epoch:[{epoch+1}/{args.epoch}]  Recog_Loss:[{round(recog_epoch_loss, 4)}] Anti_Loss:[{round(anti_epoch_loss, 4)}] Execution_time:[{round(e_t-s_t, 1)}] second")
+                print(f"Phase:[{phase}] Epoch:[{epoch+1}/{args.e_epoch}] All_Loss:[{round(all_epoch_loss, 4)}] Recog_Loss:[{round(recog_epoch_loss, 4)}] Anti_Loss:[{round(anti_epoch_loss, 4)}] Execution_time:[{round(e_t-s_t, 1)}] second")
 
         # plot loss
         assert len(phase_list) == len(loss_list)
         if len(phase_list) == 2:
             writer.add_scalars('train_val_epoch_loss', {'train_loss': sum(loss_list[0]), 'train_recog_loss': loss_list[0][0], 'train_anti_loss': loss_list[0][1], \
                                                         'val_loss': sum(loss_list[1]), 'val_recog_loss': loss_list[1][0], 'val_anti_loss': loss_list[1][1]}, epoch)
+            if BF_CONFIG['pre_norm']:
+                scheduler.step(sum(loss_list[1]))
         else:
             writer.add_scalars('trainval_epoch_loss', {'trainval_loss': sum(loss_list[0]), 'recog_loss': loss_list[0][0], 'anti_loss': loss_list[0][1]}, epoch)
         # save training information and checkpoint
@@ -215,7 +214,7 @@ def train_model_recog_only():
     # prepare the data
     collate_fn = collate_fn_with_backbone if args.feat_type == "online" else collate_fn_without_backbone
     train_set = BreakfastDataset(mode="train", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False)
-    val_set = BreakfastDataset(mode="val", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False)
+    val_set = BreakfastDataset(mode="val", split_idx=args.split_idx, task=args.task, feat_type=args.feat_type, anti_feat=args.anti_feat, preproc=None, over_write=False, data_aug=False)
     train_dataloader = DataLoader(dataset=train_set, batch_size=args.bs, shuffle=True, num_workers=args.nw, collate_fn=collate_fn)
     val_dataloader = DataLoader(dataset=val_set, batch_size=args.bs, shuffle=True, num_workers=args.nw, collate_fn=collate_fn)
     dataset = {"train": train_set, "val": val_set}
@@ -224,7 +223,7 @@ def train_model_recog_only():
     print("Preparing data done!!!")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print("Training on {}.".format(device))
+    print("Training on {}!!!".format(device))
 
     # prepare the model
     assert args.use_dec == (args.task=="recog_anti"), "args.use_dec should be TRUE if args.task==recog_anti, vice versa" 

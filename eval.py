@@ -11,7 +11,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset.config import BF_CONFIG, BF_ACTION_CLASS
-from model.main import Anticipation_Without_Backbone, Anticipation_With_Backbone
+from model.model import Anticipation_Without_Backbone, Anticipation_With_Backbone
 from dataset.breakfast_dataset import BreakfastDataset_Evaluation
 import utils.io as io
 
@@ -87,7 +87,7 @@ def evaluation():
         with torch.no_grad():
             recog_logits, anti_logits, *attn = model(obs_feat, obs_pad_num, anti_pad_num)
             # import ipdb; ipdb.set_trace()
-            recog_scores, anti_scores = torch.nn.Softmax(-1)(recog_logits), torch.nn.Softmax(-1)(anti_logits)
+            recog_scores, anti_scores = torch.nn.Softmax(-1)(recog_logits), torch.nn.Softmax(-1)(anti_logits) 
             top_recog_probs, top_recog_class = recog_scores.topk(1, dim=-1)
             top_anti_probs, top_anti_class = anti_scores.topk(1, dim=-1)
             for i, j in enumerate(BF_CONFIG['eval_obs_perc']):

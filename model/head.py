@@ -20,33 +20,45 @@ class I3D_Recognition_Head(nn.Module):
 
 
 class I3D_Head(nn.Module):
-    def __init__(self, d_in=1024, drop_prob=0.1, use_fc=True):
+    def __init__(self, d_in=1024, drop_prob=0.1, use_fc=True, use_lnorm=False):
         super(I3D_Head, self).__init__()
         self.use_fc = use_fc
+        self.use_lnorm = use_lnorm
         if use_fc == 1:
             # self.avg = nn.AvgPool3d(kernel_size=(1, 7, 7), stride=1)
             self.fc = nn.Linear(1024, d_in, bias=True)
             self.dropout = nn.Dropout(drop_prob)
-            # self.layer_norm = nn.LayerNorm(d_in, eps=1e-6)
+            self.layer_norm = nn.LayerNorm(d_in, eps=1e-6)
         if use_fc == 2:
             self.fc = nn.Linear(1024, d_in, bias=True)
-            self.dropout = nn.Dropout(drop_prob)
-            # self.layer_norm = nn.LayerNorm(d_in, eps=1e-6)
+            self.dropout1 = nn.Dropout(drop_prob)
             self.fc2 = nn.Linear(d_in, d_in, bias=True)
+            self.dropout2 = nn.Dropout(drop_prob)
+            if use_lnorm:
+                self.layer_norm1 = nn.LayerNorm(d_in, eps=1e-6)
+                self.layer_norm2 = nn.LayerNorm(d_in, eps=1e-6)
     
     def forward(self, x):
         # x = self.avg(x)
         # x = F.normalize(x)
         if self.use_fc == 1:
-            # x = self.layer_norm(x)
-            x = F.relu(self.fc(x))
-            return self.dropout(x)
-        elif self.use_fc == 2:
-            # x = self.layer_norm(x)
-            x = F.relu(self.fc(x))
+            x = self.fc(x)
+            x = self.layer_norm(x)
+            x = F.relu(x, inplace=True)
             x = self.dropout(x)
-            x = F.relu(self.fc2(x))
-            return self.dropout(x)
+            return x
+        elif self.use_fc == 2:
+            x = self.fc(x)
+            if self.use_lnorm:
+                x = self.layer_norm1(x)
+            x = F.relu(x)
+            x = self.dropout1(x)
+            x = self.fc2(x)
+            if self.use_lnorm:
+                x = self.layer_norm2(x)
+            x = F.relu(x)
+            x = self.dropout2(x)
+            return x
         else:
             return x
 
@@ -61,6 +73,7 @@ class Encoder_Head(nn.Module):
             self.recog_fc2 = nn.Linear(in_dim, action_num)
         else:
             self.recog_fc = nn.Linear(in_dim, action_num)
+            # self.recog_fc_time = nn.Linear(in_dim, 1)
 
     def forward(self, x):
         if self.layers==2:
@@ -69,8 +82,11 @@ class Encoder_Head(nn.Module):
             logits = self.recog_fc2(logits)
         else:
             logits = self.recog_fc(x)
+            # recog_t = self.recog_fc_time(x)
+            # recog_t = F.relu(recog_t)
+            recog_t = 0
 
-        return logits
+        return logits, recog_t
 
 
 class Decoder_Head(nn.Module):
@@ -83,6 +99,7 @@ class Decoder_Head(nn.Module):
             self.anti_fc2 = nn.Linear(in_dim, action_num)
         else:
             self.anti_fc = nn.Linear(in_dim, action_num)
+            # self.anti_fc_time = nn.Linear(in_dim, 1)
 
     def forward(self, x):
         if self.layers==2:
@@ -91,8 +108,11 @@ class Decoder_Head(nn.Module):
             logits = self.anti_fc2(logits)
         else:
             logits = self.anti_fc(x)
+            anti_t = 0
+            # anti_t = self.anti_fc_time(x)
+            # anti_t = F.relu(anti_t)
 
-        return logits
+        return logits, anti_t
 
 class Decoder_Queries_Gen(nn.Module):
     def __init__(self, in_dim=1024, drop_prob=0.1, all_zeros=False):

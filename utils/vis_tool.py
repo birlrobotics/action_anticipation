@@ -16,7 +16,7 @@ class VISUALIZER(object):
         self.fontFace = cv2.FONT_HERSHEY_COMPLEX_SMALL
         self.fontScale = 1
         self.fontThickness = 1
-        self.lineThickness = 2
+        self.lineThickness = 1
 
     def show(self, f_name, gt_labels_list, recog_res, anti_res, obs_prec):
         video_dir = os.path.join(*f_name.replace('rgb_frame', 'original').split('/')[:-1])
@@ -35,7 +35,7 @@ class VISUALIZER(object):
         cv2.namedWindow(f_name.split('/')[-1])
         cv2.moveWindow(f_name.split('/')[-1], 50, 50)
 
-        unit = 600 // round(fcount/15+0.5)
+        unit = 600 // round(fcount/fps+0.5)
         sec = 0
         self.record_img = None; mark=True
         for i in range(fcount):
@@ -46,12 +46,12 @@ class VISUALIZER(object):
             if self.record_img is None:
                 self.record_img = np.zeros((fheight+self.offset, fwidth, 3), dtype=np.uint8)
             self.record_img[:fheight, :fwidth, :] = frame
-            # plot in one second
-            if i % 15 == 14:
+            # plot every second
+            if i % fps == fps-1:
                 # import ipdb; ipdb.set_trace()
                 sec += 1
                 # use the main action as the label in a second
-                gt_label = gt_labels_list[(sec-1)*15+7]
+                gt_label = gt_labels_list[(sec-1)*fps+fps//2]
                 gt_text = f'GT:{gt_label}'
                 # for gt bar
                 self.record_img[fheight+1:fheight+self.bar_top_offset,:,:] = 0
@@ -80,8 +80,9 @@ class VISUALIZER(object):
             # show the results
             cv2.imshow(f_name.split('/')[-1], np.array(self.record_img)[:,:,::-1])
             video.write(np.array(self.record_img)[:,:,::-1])
-            
+
             if cv2.waitKey(30) & 0xFF == ord('q'):
                 break
+        
         capture.release()
         cv2.destroyAllWindows()

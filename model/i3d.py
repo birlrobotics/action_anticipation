@@ -1,4 +1,4 @@
-## The code comes from 
+## The code is borrowed from 
 ## https://github.com/rimchang/kinetics-i3d-Pytorch/blob/master/model/I3D_Pytorch.py
 
 import torch.nn as nn

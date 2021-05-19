@@ -12,7 +12,7 @@ def arg_parse():
     parser = argparse.ArgumentParser(description='visualizing the results')
     parser.add_argument('--ck', type=str, default='result/breakfast_checkpoint.pth',
                         help='path to the pretrained checkpoints')
-    parser.add_argument('--file', type=str, default='./dataset/breakfast/rgb_frame/P03/cam01/tea',
+    parser.add_argument('--file', type=str, default='./dataset/breakfast/rgb_frame/P25/webcam02/friedegg',
                         help='path to the video you want to visualize, default=./dataset/breakfast/rgb_frame/P03/cam01/cereals')
     parser.add_argument('--mode', type=str, default='test',
                         help='training sample or testing sample or val sample, default=test')

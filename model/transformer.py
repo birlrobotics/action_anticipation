@@ -1,7 +1,10 @@
 ''' Transformer: This code is mainly borrowed from 
     https://github.com/jadore801120/attention-is-all-you-need-pytorch  
-    Actually, there is another implementation in Pytorch
-    https://pytorch.org/docs/stable/_modules/torch/nn/modules/transformer.html#Transformer
+    and from
+    https://github.com/jwang0306/transformer-pytorch/blob/master/transformer.ipynb
+
+    Actually, there is another implementation in Pytorch 
+    https://pytorch.org/docs/stable/_modules/torch/nn/modules/transformer.html#Transformer 
 '''
 
 import math
@@ -57,7 +60,7 @@ def multi_scale_mask(seq_len, h_step_list=[4, 8, 16], h_num_each=2):
     return ms_mask.byte()
 
 class Transformer(nn.Module):
-    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1, max_len=300, pos_enc=True, use_dec=True, return_attn=True, msm=False):
+    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1, max_len=300, pos_enc=True, use_dec=True, return_attn=True, msm=False, pre_norm=False):
         super(Transformer, self).__init__()
         
         self.n_attn_head=n_attn_head
@@ -65,17 +68,16 @@ class Transformer(nn.Module):
         self.use_dec = use_dec
         self.return_attn = return_attn
         self.encoder = Encoder(n_layers=n_layers, n_attn_head=n_attn_head, d_input=d_input, 
-                               d_inner=d_inner, d_qk=d_qk, d_v=d_v, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
+                               d_inner=d_inner, d_qk=d_qk, d_v=d_v, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc, pre_norm=pre_norm)
         if use_dec:
             self.decoder = Decoder(n_layers=n_layers, n_attn_head=n_attn_head, d_input=d_input, 
-                               d_inner=d_inner, d_qk=d_qk, d_v=d_v, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
+                               d_inner=d_inner, d_qk=d_qk, d_v=d_v, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc, pre_norm=pre_norm)
         if msm:
             self.ms_mask = multi_scale_mask(max_len, h_step_list=[4, 8, 16], h_num_each=2)
 
     def forward(self, src_seq, trg_seq, enc_pad_num, dec_pad_num):
         # TODO: make the mask matrix
         src_mask = None; trg_mask = None
-        # import ipdb; ipdb.set_trace()
         src_mask = get_pad_mask(src_seq.shape[1], enc_pad_num).to(src_seq.device)
         # trg_mask = (get_pad_mask(trg_seq.shape[1], dec_pad_num) & get_sequence_mask(trg_seq.shape[1])).to(src_seq.device)
         trg_mask = get_pad_mask(trg_seq.shape[1], dec_pad_num).to(src_seq.device)
@@ -94,37 +96,50 @@ class Transformer(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, max_len, drop_prob=0.1, pos_enc=True):
+    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, max_len, drop_prob=0.1, pos_enc=True, pre_norm=False):
         super(Encoder, self).__init__()
         self.position_enc = PositionalEncoding(d_input=d_input, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
-        self.encoder_stack = nn.ModuleList([EncoderLayer(n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob) for _ in range(n_layers)])
-        # self.layer_norm = nn.LayerNorm(d_input, eps=1e-6)
+        self.encoder_stack = nn.ModuleList([EncoderLayer(n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob, pre_norm=pre_norm) for _ in range(n_layers)])
+        self.pre_norm = pre_norm
+        if pre_norm:
+            self.last_norm = nn.LayerNorm(d_input, eps=1e-6)
 
     def forward(self, x, src_mask, return_attn = False):
         enc_slf_attn_list = []
 
         enc_output = self.position_enc(x)
+        # enc_output = x
         for enc_layer in self.encoder_stack:
+            # enc_output = self.position_enc(enc_output)
             enc_output, enc_slf_attn = enc_layer(enc_output, slf_attn_mask=src_mask)
             enc_slf_attn_list += [enc_slf_attn] if return_attn else []
-        
+        if self.pre_norm:
+            enc_output = self.last_norm(enc_output)
+
         return enc_output, enc_slf_attn_list
 
 
 class Decoder(nn.Module):
-    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, max_len, drop_prob=0.1, pos_enc=True):
+    def __init__(self, n_layers, n_attn_head, d_input, d_inner, d_qk, d_v, max_len, drop_prob=0.1, pos_enc=True, pre_norm=False):
         super(Decoder, self).__init__()
         self.position_enc = PositionalEncoding(d_input=d_input, max_len=max_len, drop_prob=drop_prob, pos_enc=pos_enc)
-        self.decoder_stack = nn.ModuleList([DecoderLayer(n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob) for _ in range(n_layers)])
+        self.decoder_stack = nn.ModuleList([DecoderLayer(n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob, pre_norm=pre_norm) for _ in range(n_layers)])
+        self.pre_norm = pre_norm
+        if pre_norm:
+            self.last_norm = nn.LayerNorm(d_input)
 
     def forward(self, x, enc_output, src_mask, trg_mask, enc_pad_num, return_attn=False):
         dec_slf_attn_list, dec_enc_attn_list = [], []
 
         dec_output = self.position_enc(x)
+        # dec_output = x
         for dec_layer in self.decoder_stack:
+            # dec_output = self.position_enc(dec_output)
             dec_output, dec_slf_attn, dec_enc_attn = dec_layer(dec_output, enc_output, slf_attn_mask=trg_mask, dec_enc_attn_mask=src_mask)
             dec_slf_attn_list += [dec_slf_attn] if return_attn else []
             dec_enc_attn_list += [dec_enc_attn] if return_attn else []
+        if self.pre_norm:
+            dec_output = self.last_norm(dec_output)
         
         return dec_output, dec_slf_attn_list, dec_enc_attn_list
 
@@ -147,34 +162,63 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         if self.pos_enc:
             x = x + self.pe[:, :x.size(1), :]
-            # return self.dropout(x)
+            # x = self.dropout(x)
             return x
         else:
             return x
 
 class EncoderLayer(nn.Module):
-    def __init__(self, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1):
+    def __init__(self, n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1, pre_norm=False):
         super(EncoderLayer, self).__init__()
         self.slf_attn = MultiHeadAttention(n_attn_head, d_input, d_qk, d_v, drop_prob=drop_prob)
+        self.slf_attn_norm = nn.LayerNorm(d_input)
         self.ffn = FeedForward(d_input, d_inner, drop_prob=drop_prob)
+        self.ffn_norm = nn.LayerNorm(d_input)
+        self.pre_norm = pre_norm
 
     def forward(self, enc_input, slf_attn_mask):
-        enc_output, enc_slf_attn = self.slf_attn(enc_input, enc_input, enc_input, slf_attn_mask)
-        enc_output = self.ffn(enc_output)
+        if self.pre_norm:
+            temp_input = self.slf_attn_norm(enc_input)
+            temp_output, enc_slf_attn = self.slf_attn(temp_input, temp_input, temp_input, slf_attn_mask)
+            temp_output = temp_output + enc_input
+            temp_input = self.ffn_norm(temp_output)
+            enc_output = temp_output + self.ffn(temp_input)
+        else:
+            temp_output, enc_slf_attn = self.slf_attn(enc_input, enc_input, enc_input, slf_attn_mask)
+            temp_output = self.slf_attn_norm(temp_output+enc_input) 
+            enc_output = self.ffn_norm(temp_output + self.ffn(temp_output))
         return enc_output, enc_slf_attn
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self,  n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1):
+    def __init__(self,  n_attn_head, d_input, d_inner, d_qk, d_v, drop_prob=0.1, pre_norm=False):
         super(DecoderLayer, self).__init__()
         self.slf_attn = MultiHeadAttention(n_attn_head, d_input, d_qk, d_v, drop_prob=drop_prob)
+        self.slf_attn_norm = nn.LayerNorm(d_input)
         self.enc_attn = MultiHeadAttention(n_attn_head, d_input, d_qk, d_v, drop_prob=drop_prob)
+        self.enc_attn_norm = nn.LayerNorm(d_input)
         self.ffn = FeedForward(d_input, d_inner, drop_prob=drop_prob)
+        self.ffn_norm = nn.LayerNorm(d_input)
+        self.pre_norm = pre_norm
 
     def forward(self, dec_input, enc_output, slf_attn_mask=None, dec_enc_attn_mask=None):
-        dec_output, dec_slf_attn = self.slf_attn(dec_input, dec_input, dec_input, slf_attn_mask)
-        dec_output, dec_enc_attn = self.enc_attn(dec_output, enc_output, enc_output, dec_enc_attn_mask)
-        dec_output = self.ffn(dec_output)
+        if self.pre_norm:
+            temp_input = self.slf_attn_norm(dec_input)
+            temp_output, dec_slf_attn = self.slf_attn(temp_input, temp_input, temp_input, slf_attn_mask)
+            temp_output = temp_output + dec_input
+
+            temp_input = self.enc_attn_norm(temp_output)
+            temp_output2, dec_enc_attn = self.enc_attn(temp_input, enc_output, enc_output, dec_enc_attn_mask)
+            temp_output = temp_output + temp_output2
+
+            temp_input = self.ffn_norm(temp_output)
+            dec_output = temp_output + self.ffn(temp_input)
+        else:
+            temp_output, dec_slf_attn = self.slf_attn(dec_input, dec_input, dec_input, slf_attn_mask)
+            temp_output = self.slf_attn_norm(temp_output+dec_input)
+            temp_output2, dec_enc_attn = self.enc_attn(temp_output, enc_output, enc_output, dec_enc_attn_mask)
+            temp_output = self.enc_attn_norm(temp_output+temp_output2)
+            dec_output = self.ffn_norm(temp_output+self.ffn(temp_output))
 
         return dec_output, dec_slf_attn, dec_enc_attn
 
@@ -194,7 +238,7 @@ class MultiHeadAttention(nn.Module):
 
         self.fc = nn.Linear(n_attn_head * d_v, d_input, bias=False)
         self.dropout = nn.Dropout(drop_prob)
-        self.layer_norm = nn.LayerNorm(d_input, eps=1e-6)
+        # self.layer_norm = nn.LayerNorm(d_input, eps=1e-6)
 
     def forward(self, queries, keys, values, mask=None):
         sz_b, len_q, len_k, len_v = queries.size(0), queries.size(1), keys.size(1), values.size(1)
@@ -207,16 +251,12 @@ class MultiHeadAttention(nn.Module):
 
         # transpose for attention dot product: --> (b_size, n, seq_len, d) 
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
-        # for head axis broadcasting
-        # if mask is not None:
-        #     mask = mask.unsqueeze(1)
 
         output, attn = self.attention(q, k, v, mask)
         output = output.transpose(1, 2).contiguous().view(sz_b, len_q, -1)
         output = self.dropout(self.fc(output))
-        output += queries
-        output = self.layer_norm(output)
-
+        # output += queries
+        # output = self.layer_norm(output)
         return output, attn 
 
 
@@ -227,6 +267,7 @@ class ScaledDotProductAttention(nn.Module):
         self.dropout = nn.Dropout(attn_drop_prob)
 
     def forward(self, q, k, v, mask=None):
+        # import ipdb; ipdb.set_trace()
         attn_scores = torch.matmul(q / self.temperature, k.transpose(2,3))
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, -1e9)
@@ -244,15 +285,26 @@ class FeedForward(nn.Module):
         self.dropout1 = nn.Dropout(drop_prob)
         self.fc2 = nn.Linear(d_hid, d_in)
         self.dropout2 = nn.Dropout(drop_prob)
-        self.layer_norm = nn.LayerNorm(d_in, eps=1e-6)
+        # self.layer_norm = nn.LayerNorm(d_in, eps=1e-6)
         
     def forward(self, x):
         output = self.dropout1(F.relu(self.fc1(x)))
         output = self.dropout2(self.fc2(output))
-        output += x
-        output = self.layer_norm(output)
+        # output += x
+        # output = self.layer_norm(output)
 
         return output
+
+# class FeedForward(nn.Module):
+#     def __init__(self, d_in, d_hid, drop_prob=0.1):
+#         super(FeedForward, self).__init__()
+#         self.fc1 = nn.Linear(d_in, d_in)
+#         self.dropout1 = nn.Dropout(drop_prob)
+        
+#     def forward(self, x):
+#         output = self.dropout1(F.relu(self.fc1(x)))
+
+#         return output
 
 
 def _get_activation_fn(activation):
