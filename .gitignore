@@ -1,7 +1,7 @@
 __pycache__
 *.pyc
 utils/__pycache__/*
-utils/data_analyse.py
+# utils/data_analyse.py
 scp_file.sh
 log/*
 

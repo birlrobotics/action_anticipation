@@ -19,8 +19,8 @@ BF_CONFIG = {
     # For transformer
     "n_layers": 2,
     "n_attn_head": 8,
-    "d_input": 1024,
-    "d_inner": 2048,      # For position-wise Feed-Forward network
+    "d_input": 256,
+    "d_inner": 512,      # For position-wise Feed-Forward network
     "d_qk": 64,
     "d_v": 64,
     "drop_prob": 0.3,
